@@ -2,6 +2,8 @@
 
 A small, server-rendered sidecar for reviewing large Immich duplicate sets in resumable, oldest-first batches. It uses Immich's supported HTTP API and stores workflow state in SQLite; it never reads the photo filesystem or Immich database.
 
+> **Disclaimer:** This is an unofficial community project. It is not affiliated with, endorsed by, or maintained by the Immich project or its contributors.
+
 ## Current milestone
 
 The working MVP supports loading duplicate groups, 100-item oldest-first batches, side-by-side previews, Keep/Trash decisions, Skip, explicit confirmation, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. Stack decisions are validated by the model but execution is not yet enabled in the UI; see [API integration notes](docs/immich-api.md).

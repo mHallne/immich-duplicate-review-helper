@@ -1,0 +1,115 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using ImmichDuplicateReview.Features.Batches;
+
+namespace ImmichDuplicateReview.Integrations.Immich;
+
+public sealed record ImmichOptions(Uri BaseUrl, string ApiKey);
+
+public sealed class ImmichApiException(string message, Exception? innerException = null) : Exception(message, innerException);
+
+public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) : IImmichClient
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, "duplicates");
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var dtos = await response.Content.ReadFromJsonAsync<DuplicateGroupDto[]>(JsonOptions, cancellationToken) ?? [];
+        return dtos.Select(Map).ToArray();
+    }
+
+    public async Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, $"assets/{Uri.EscapeDataString(assetId)}/thumbnail?size=preview");
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return new(bytes, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+    }
+
+    public async Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
+    {
+        var payload = new ResolveRequest([new(groupId, keepAssetIds, trashAssetIds)]);
+        using var request = CreateRequest(HttpMethod.Post, "duplicates/resolve");
+        request.Content = JsonContent.Create(payload, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var results = await response.Content.ReadFromJsonAsync<ResolveResult[]>(JsonOptions, cancellationToken) ?? [];
+        var result = results.SingleOrDefault(x => x.Id == groupId);
+        if (result is null || !result.Success)
+            throw new ImmichApiException($"Immich failed to resolve duplicate group '{groupId}': {result?.Error ?? "missing result"}.");
+    }
+
+    public async Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, "system-config");
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var config = await response.Content.ReadFromJsonAsync<SystemConfigDto>(JsonOptions, cancellationToken);
+        if (config?.Trash.Enabled != true)
+            throw new ImmichApiException("Immich Trash is disabled; refusing an operation that could permanently delete assets.");
+    }
+
+    public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var request = CreateRequest(HttpMethod.Get, "users/me");
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
+    private HttpRequestMessage CreateRequest(HttpMethod method, string path)
+    {
+        var baseUrl = options.BaseUrl.ToString().TrimEnd('/') + "/api/";
+        var request = new HttpRequestMessage(method, new Uri(new Uri(baseUrl), path));
+        request.Headers.Add("x-api-key", options.ApiKey);
+        return request;
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode) return;
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new ImmichApiException($"Immich returned {(int)response.StatusCode}: {body}");
+    }
+
+    private static DuplicateGroup Map(DuplicateGroupDto group) => new(group.DuplicateId,
+        group.Assets.Select(asset =>
+        {
+            var exif = asset.ExifInfo;
+            var camera = string.IsNullOrWhiteSpace(exif?.Model) ? exif?.Make : exif.Model;
+            return new DuplicateAsset(
+                asset.Id,
+                asset.OriginalFileName,
+                asset.FileCreatedAt,
+                asset.OriginalPath,
+                exif?.FileSizeInByte,
+                exif?.ExifImageWidth,
+                exif?.ExifImageHeight,
+                Path.GetExtension(asset.OriginalFileName).TrimStart('.').ToUpperInvariant(),
+                camera,
+                exif is not null,
+                exif?.Latitude is not null && exif.Longitude is not null,
+                asset.IsFavorite,
+                exif?.Rating);
+        }).ToArray());
+
+    private sealed record DuplicateGroupDto(string DuplicateId, AssetDto[] Assets);
+    private sealed record AssetDto(string Id, string OriginalFileName, string OriginalPath, DateTimeOffset FileCreatedAt, bool IsFavorite, ExifDto? ExifInfo);
+    private sealed record ExifDto(long? FileSizeInByte, int? ExifImageWidth, int? ExifImageHeight, string? Make, string? Model, double? Latitude, double? Longitude, int? Rating);
+    private sealed record ResolveRequest(IReadOnlyList<ResolveGroup> Groups);
+    private sealed record ResolveGroup(string DuplicateId, IReadOnlyCollection<string> KeepAssetIds, IReadOnlyCollection<string> TrashAssetIds);
+    private sealed record ResolveResult(string Id, bool Success, string? Error);
+    private sealed record SystemConfigDto(TrashConfigDto Trash);
+    private sealed record TrashConfigDto(bool Enabled);
+}

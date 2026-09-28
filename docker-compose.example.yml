@@ -1,0 +1,19 @@
+services:
+  duplicate-review-helper:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - duplicate-review-data:/data
+    networks:
+      - immich
+
+volumes:
+  duplicate-review-data:
+
+networks:
+  immich:
+    external: true
+    name: immich_default

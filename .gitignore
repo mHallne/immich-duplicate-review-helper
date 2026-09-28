@@ -1,57 +1,8 @@
-# .NET build output
-[Bb]in/
-[Oo]bj/
-[Dd]ebug/
-[Rr]elease/
-[Aa]rtifacts/
-publish/
-
-# Test results and coverage
-[Tt]est[Rr]esult*/
-coverage*/
-*.coverage
-*.coveragexml
-*.trx
-
-# Visual Studio and user-specific files
-.vs/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-
-# JetBrains Rider
-.idea/
-*.sln.iml
-
-# Visual Studio Code (keep shared project settings if added)
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# NuGet packages and generated package artifacts
-*.nupkg
-*.snupkg
-packages/
-!**/packages/build/
-
-# Local configuration and secrets
+bin/
+obj/
 .env
-.env.*
-!.env.example
-appsettings.*.local.json
-secrets.json
-
-# Runtime data and logs
+data/
 *.db
 *.db-shm
 *.db-wal
-*.log
-logs/
-
-# Operating-system files
 .DS_Store
-Thumbs.db
-

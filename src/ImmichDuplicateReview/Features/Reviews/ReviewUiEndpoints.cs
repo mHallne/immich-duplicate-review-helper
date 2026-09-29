@@ -14,6 +14,7 @@ public static class ReviewUiEndpoints
             <p>Review duplicate groups in a small, resumable batch. No action occurs without confirmation.</p>
             <form method="post" action="/review/start">
               <label>Batch size <select name="batchSize">{{RenderBatchSizeOptions(options.DefaultSize)}}</select></label>
+              <label>Sort <select name="sortMode">{{RenderSortModeOptions()}}</select></label>
               <button type="submit">Load oldest duplicates</button>
             </form></main>
             """), "text/html"));
@@ -22,10 +23,11 @@ public static class ReviewUiEndpoints
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : options.DefaultSize;
+            var sortMode = SortModes.Parse(form["sortMode"]);
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
-            var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size);
-            await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), cancellationToken);
+            var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size, sortMode);
+            await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 
@@ -125,6 +127,15 @@ public static class ReviewUiEndpoints
     private static string E(string value) => WebUtility.HtmlEncode(value);
     private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 50, 100, 250, 500 }.Select(size =>
         $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));
+    private static string RenderSortModeOptions() => """
+        <option value="oldest">Oldest first</option>
+        <option value="newest">Newest first</option>
+        <option value="smallest-group">Smallest group first</option>
+        <option value="largest-group">Largest group first</option>
+        <option value="largest-potential-saving">Largest potential storage saving</option>
+        <option value="path">Path</option>
+        <option value="filename">Filename</option>
+        """;
 
     private const string KeyboardScript = """
         let focused=0; const cards=[...document.querySelectorAll('.asset')];

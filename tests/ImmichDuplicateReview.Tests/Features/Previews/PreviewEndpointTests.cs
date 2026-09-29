@@ -74,6 +74,7 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         await using var factory = new ConfiguredFactory("250");
         var html = await factory.CreateClient().GetStringAsync("/");
         Assert.Contains("<option selected>250</option>", html, StringComparison.Ordinal);
+        Assert.Contains("value=\"largest-potential-saving\"", html, StringComparison.Ordinal);
     }
 
     public sealed class Factory : WebApplicationFactory<Program>

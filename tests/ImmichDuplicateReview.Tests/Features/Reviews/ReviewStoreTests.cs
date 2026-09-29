@@ -88,6 +88,23 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         Assert.Equal("g3", next!.Id);
     }
 
+    [Fact]
+    public async Task Selected_sort_mode_survives_session_restart()
+    {
+        await using (var first = new ReviewStore(_databasePath))
+        {
+            await first.InitializeAsync();
+            await first.UpsertGroupsAsync([Group("g1")]);
+            await first.CreateOrResumeSessionAsync(100, ["g1"], "newest");
+        }
+
+        await using var restarted = new ReviewStore(_databasePath);
+        await restarted.InitializeAsync();
+        var session = await restarted.CreateOrResumeSessionAsync(100);
+
+        Assert.Equal("newest", session.SortMode);
+    }
+
     private static DuplicateGroup Group(string id, int day = 1) => new(id,
     [
         new($"{id}-a", "a.jpg", DateTimeOffset.UnixEpoch.AddDays(day)),

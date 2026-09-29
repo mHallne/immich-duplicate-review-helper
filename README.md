@@ -6,7 +6,9 @@ A small, server-rendered sidecar for reviewing large Immich duplicate sets in re
 
 ## Current milestone
 
-The working MVP supports loading duplicate groups, persisted oldest-first batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, explicit confirmation, accurate batch progress, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. A selected batch remains bounded after restart; newly discovered groups wait for a later batch.
+The working application supports loading duplicate groups, persisted sortable batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, explicit confirmation, accurate batch progress, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. A selected batch remains bounded after restart; newly discovered groups wait for a later batch.
+
+Batch sorting supports oldest, newest, smallest group, largest group, largest potential storage saving, path, and filename. The chosen ordering is stored with the session and survives restart.
 
 ## Immich API key
 

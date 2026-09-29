@@ -226,12 +226,15 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
     }
 
     public async Task<ReviewSession> CreateOrResumeSessionAsync(int batchSize, CancellationToken cancellationToken = default)
-        => await CreateOrResumeSessionCoreAsync(batchSize, [], cancellationToken);
+        => await CreateOrResumeSessionCoreAsync(batchSize, [], "oldest", cancellationToken);
 
     public async Task<ReviewSession> CreateOrResumeSessionAsync(int batchSize, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
-        => await CreateOrResumeSessionCoreAsync(batchSize, groupIds, cancellationToken);
+        => await CreateOrResumeSessionCoreAsync(batchSize, groupIds, "oldest", cancellationToken);
 
-    private async Task<ReviewSession> CreateOrResumeSessionCoreAsync(int batchSize, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)
+    public async Task<ReviewSession> CreateOrResumeSessionAsync(int batchSize, IReadOnlyList<string> groupIds, string sortMode, CancellationToken cancellationToken = default)
+        => await CreateOrResumeSessionCoreAsync(batchSize, groupIds, sortMode, cancellationToken);
+
+    private async Task<ReviewSession> CreateOrResumeSessionCoreAsync(int batchSize, IReadOnlyList<string> groupIds, string sortMode, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using (var find = connection.CreateCommand())
@@ -253,14 +256,15 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         await using var insert = connection.CreateCommand();
         insert.CommandText = """
             INSERT INTO review_session (created_at, batch_size, sort_mode, current_position)
-            VALUES ($created, $size, 'oldest', 0);
+            VALUES ($created, $size, $sortMode, 0);
             SELECT last_insert_rowid();
             """;
         insert.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
         insert.Parameters.AddWithValue("$size", batchSize);
+        insert.Parameters.AddWithValue("$sortMode", sortMode);
         var id = (long)(await insert.ExecuteScalarAsync(cancellationToken) ?? throw new InvalidOperationException("Session was not created."));
         await PopulateSessionAsync(connection, id, groupIds, cancellationToken);
-        return new(id, batchSize, "oldest", 0);
+        return new(id, batchSize, sortMode, 0);
     }
 
     private async Task RecordAsync(string groupId, ReviewStatus status, string? decisionJson, string? notes, CancellationToken cancellationToken)

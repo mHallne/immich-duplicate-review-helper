@@ -6,11 +6,11 @@ A small, server-rendered sidecar for reviewing large Immich duplicate sets in re
 
 ## Current milestone
 
-The working MVP supports loading duplicate groups, 100-item oldest-first batches, side-by-side previews, Keep/Trash decisions, Skip, explicit confirmation, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. Stack decisions are validated by the model but execution is not yet enabled in the UI; see [API integration notes](docs/immich-api.md).
+The working MVP supports loading duplicate groups, oldest-first batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, explicit confirmation, local resume state, keyboard controls, health endpoints, and an end-to-end restart test.
 
 ## Immich API key
 
-In Immich Web, open **Account Settings → API Keys**, create a dedicated key, and grant duplicate read/delete, asset view/delete, system configuration read, and user read permissions. The system-configuration permission is required to prove Immich Trash is enabled before resolving a group. Using an unrestricted key works but is not recommended.
+In Immich Web, open **Account Settings → API Keys**, create a dedicated key, and grant duplicate read/delete, asset view/update/delete, stack read/create, system configuration read, and user read permissions. The system-configuration permission is required to prove Immich Trash is enabled before resolving a group. Using an unrestricted key works but is not recommended.
 
 The key remains in the backend container. Browser previews go through `/api/assets/{assetId}/preview`; browser JavaScript never receives Immich credentials.
 

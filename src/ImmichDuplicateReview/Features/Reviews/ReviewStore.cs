@@ -48,6 +48,11 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                 current_position INTEGER NOT NULL DEFAULT 0,
                 completed_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS review_action (
+                group_id INTEGER PRIMARY KEY REFERENCES duplicate_group(id),
+                resolve_completed_at TEXT,
+                stack_completed_at TEXT
+            );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -105,6 +110,15 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
     public Task MarkFailedAsync(string groupId, string decisionJson, string notes, CancellationToken cancellationToken = default) =>
         RecordAsync(groupId, ReviewStatus.Failed, decisionJson, notes, cancellationToken);
 
+    public Task<bool> IsResolveCompletedAsync(string groupId, CancellationToken cancellationToken = default) =>
+        IsActionCompletedAsync(groupId, "resolve_completed_at", cancellationToken);
+
+    public Task MarkResolveCompletedAsync(string groupId, CancellationToken cancellationToken = default) =>
+        MarkActionCompletedAsync(groupId, "resolve_completed_at", cancellationToken);
+
+    public Task MarkStackCompletedAsync(string groupId, CancellationToken cancellationToken = default) =>
+        MarkActionCompletedAsync(groupId, "stack_completed_at", cancellationToken);
+
     public async Task<ReviewStatus?> GetStatusAsync(string groupId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -123,7 +137,7 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         command.CommandText = """
             SELECT immich_group_id, asset_metadata_json
             FROM duplicate_group
-            WHERE status = 'pending'
+            WHERE status IN ('pending', 'failed')
             ORDER BY sort_date, immich_group_id;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -206,6 +220,33 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;
+    }
+
+    private async Task<bool> IsActionCompletedAsync(string groupId, string column, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT ra.{column} IS NOT NULL
+            FROM duplicate_group dg LEFT JOIN review_action ra ON ra.group_id = dg.id
+            WHERE dg.immich_group_id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", groupId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 1;
+    }
+
+    private async Task MarkActionCompletedAsync(string groupId, string column, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO review_action (group_id, {column})
+            SELECT id, $completed FROM duplicate_group WHERE immich_group_id = $id
+            ON CONFLICT(group_id) DO UPDATE SET {column} = excluded.{column};
+            """;
+        command.Parameters.AddWithValue("$id", groupId);
+        command.Parameters.AddWithValue("$completed", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0) throw new KeyNotFoundException($"Group '{groupId}' was not found.");
     }
 
     private static async Task<int> CountCompletedAsync(SqliteConnection connection, CancellationToken cancellationToken)

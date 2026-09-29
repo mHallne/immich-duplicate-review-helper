@@ -63,6 +63,36 @@ public sealed class ImmichClientTests
         await Assert.ThrowsAsync<ImmichApiException>(() => Create(handler).ResolveAsync("group-1", ["a"], ["b"]));
     }
 
+    [Fact]
+    public async Task Ensure_stack_searches_by_primary_then_creates_with_ordered_assets()
+    {
+        var handler = new SequenceHandler(
+            _ => new(HttpStatusCode.OK) { Content = Json("[]") },
+            _ => new(HttpStatusCode.Created) { Content = Json("{\"id\":\"stack-1\",\"primaryAssetId\":\"a\",\"assets\":[{\"id\":\"a\"},{\"id\":\"c\"}]}" ) });
+        var client = new ImmichClient(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
+
+        await client.EnsureStackAsync(["a", "c"]);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal("https://immich.example/api/stacks?primaryAssetId=a", handler.Requests[0].Uri);
+        Assert.Equal(HttpMethod.Post, handler.Requests[1].Method);
+        Assert.Equal("{\"assetIds\":[\"a\",\"c\"]}", handler.Requests[1].Body);
+    }
+
+    [Fact]
+    public async Task Ensure_stack_is_idempotent_when_matching_stack_exists()
+    {
+        var handler = new SequenceHandler(_ => new(HttpStatusCode.OK)
+        {
+            Content = Json("[{\"id\":\"stack-1\",\"primaryAssetId\":\"a\",\"assets\":[{\"id\":\"a\"},{\"id\":\"c\"}]}]")
+        });
+        var client = new ImmichClient(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
+
+        await client.EnsureStackAsync(["a", "c"]);
+
+        Assert.Single(handler.Requests);
+    }
+
     private static ImmichClient Create(StubHandler handler) =>
         new(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
 
@@ -76,6 +106,21 @@ public sealed class ImmichClientTests
             LastBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             LastRequest = request;
             return new(status) { Content = new StringContent(body, Encoding.UTF8, contentType) };
+        }
+    }
+
+    private static StringContent Json(string value) => new(value, Encoding.UTF8, "application/json");
+
+    private sealed class SequenceHandler(params Func<HttpRequestMessage, HttpResponseMessage>[] responses) : HttpMessageHandler
+    {
+        private int _index;
+        public List<(HttpMethod Method, string Uri, string? Body)> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add((request.Method, request.RequestUri!.ToString(), body));
+            return responses[_index++](request);
         }
     }
 }

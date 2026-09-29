@@ -54,6 +54,25 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
             throw new ImmichApiException("Immich Trash is disabled; refusing an operation that could permanently delete assets.");
     }
 
+    public async Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default)
+    {
+        if (assetIds.Count < 2) throw new ArgumentException("A stack requires at least two assets.", nameof(assetIds));
+        var primaryAssetId = assetIds[0];
+        using (var search = CreateRequest(HttpMethod.Get, $"stacks?primaryAssetId={Uri.EscapeDataString(primaryAssetId)}"))
+        using (var response = await httpClient.SendAsync(search, cancellationToken))
+        {
+            await EnsureSuccessAsync(response, cancellationToken);
+            var stacks = await response.Content.ReadFromJsonAsync<StackDto[]>(JsonOptions, cancellationToken) ?? [];
+            var desired = assetIds.ToHashSet(StringComparer.Ordinal);
+            if (stacks.Any(stack => desired.IsSubsetOf(stack.Assets.Select(asset => asset.Id).ToHashSet(StringComparer.Ordinal)))) return;
+        }
+
+        using var create = CreateRequest(HttpMethod.Post, "stacks");
+        create.Content = JsonContent.Create(new StackCreateRequest(assetIds), options: JsonOptions);
+        using var createResponse = await httpClient.SendAsync(create, cancellationToken);
+        await EnsureSuccessAsync(createResponse, cancellationToken);
+    }
+
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -112,4 +131,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     private sealed record ResolveResult(string Id, bool Success, string? Error);
     private sealed record SystemConfigDto(TrashConfigDto Trash);
     private sealed record TrashConfigDto(bool Enabled);
+    private sealed record StackCreateRequest(IReadOnlyList<string> AssetIds);
+    private sealed record StackDto(string Id, string PrimaryAssetId, AssetReferenceDto[] Assets);
+    private sealed record AssetReferenceDto(string Id);
 }

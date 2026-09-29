@@ -37,6 +37,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
 
         Assert.Equal(ReviewStatus.Failed, await store.GetStatusAsync(group.Id));
         Assert.NotEqual(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
+        Assert.Equal(group.Id, Assert.Single(await store.LoadPendingAsync()).Id);
     }
 
     [Fact]
@@ -51,6 +52,29 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
 
         Assert.Equal(0, immich.ResolveCalls);
         Assert.Equal(ReviewStatus.Failed, await store.GetStatusAsync(group.Id));
+    }
+
+    [Fact]
+    public async Task Stack_failure_retries_only_stack_after_resolve_checkpoint()
+    {
+        var group = new DuplicateGroup("g",
+        [
+            new("a", "a.jpg", DateTimeOffset.UnixEpoch),
+            new("b", "b.jpg", DateTimeOffset.UnixEpoch),
+            new("c", "c.jpg", DateTimeOffset.UnixEpoch)
+        ]);
+        await using var store = await StoreWithAsync(group);
+        var immich = new FakeImmichClient { StackFailuresRemaining = 1 };
+        var workflow = new ConfirmReview(store, immich);
+        var decision = ReviewDecision.Create(group, ["a", "c"], ["b"], ["a", "c"]);
+
+        await Assert.ThrowsAsync<ImmichApiException>(() => workflow.HandleAsync(group, decision));
+        await workflow.HandleAsync(group, decision);
+
+        Assert.Equal(1, immich.ResolveCalls);
+        Assert.Equal(2, immich.StackCalls);
+        Assert.Equal(["resolve", "stack", "stack"], immich.Operations);
+        Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
     }
 
     private async Task<ReviewStore> StoreWithAsync(DuplicateGroup group)
@@ -74,13 +98,24 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         public int ResolveCalls { get; private set; }
         public Exception? Failure { get; init; }
         public Exception? TrashSafetyFailure { get; init; }
+        public int StackFailuresRemaining { get; set; }
+        public int StackCalls { get; private set; }
+        public List<string> Operations { get; } = [];
         public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => TrashSafetyFailure is null ? Task.CompletedTask : Task.FromException(TrashSafetyFailure);
+        public Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default)
+        {
+            StackCalls++;
+            Operations.Add("stack");
+            if (StackFailuresRemaining-- > 0) return Task.FromException(new ImmichApiException("stack failed"));
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
         {
             ResolveCalls++;
+            Operations.Add("resolve");
             return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
         }
     }

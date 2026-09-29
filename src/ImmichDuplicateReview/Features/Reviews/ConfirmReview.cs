@@ -22,8 +22,18 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient)
 
         try
         {
-            if (validated.Trash.Count > 0) await immichClient.EnsureTrashEnabledAsync(cancellationToken);
-            await immichClient.ResolveAsync(group.Id, validated.Keep, validated.Trash, cancellationToken);
+            if (!await store.IsResolveCompletedAsync(group.Id, cancellationToken))
+            {
+                if (validated.Trash.Count > 0) await immichClient.EnsureTrashEnabledAsync(cancellationToken);
+                await immichClient.ResolveAsync(group.Id, validated.Keep, validated.Trash, cancellationToken);
+                await store.MarkResolveCompletedAsync(group.Id, cancellationToken);
+            }
+            if (validated.Stack.Count > 0)
+            {
+                var orderedStackIds = group.Assets.Select(asset => asset.Id).Where(validated.Stack.Contains).ToArray();
+                await immichClient.EnsureStackAsync(orderedStackIds, cancellationToken);
+                await store.MarkStackCompletedAsync(group.Id, cancellationToken);
+            }
             await store.MarkReviewedAsync(group.Id, decisionJson, cancellationToken);
         }
         catch (Exception exception) when (exception is ImmichApiException or HttpRequestException)

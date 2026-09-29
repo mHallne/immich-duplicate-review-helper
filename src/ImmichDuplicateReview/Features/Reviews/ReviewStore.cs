@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 namespace ImmichDuplicateReview.Features.Reviews;
 
 public sealed record ReviewSession(long Id, int BatchSize, string SortMode, int CurrentPosition);
+public sealed record ReviewProgress(int Total, int Reviewed, int Skipped, int Failed, int Remaining);
 
 public sealed class ReviewStore(string databasePath) : IAsyncDisposable
 {
@@ -52,6 +53,13 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                 group_id INTEGER PRIMARY KEY REFERENCES duplicate_group(id),
                 resolve_completed_at TEXT,
                 stack_completed_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS review_session_group (
+                session_id INTEGER NOT NULL REFERENCES review_session(id) ON DELETE CASCADE,
+                group_id INTEGER NOT NULL REFERENCES duplicate_group(id),
+                position INTEGER NOT NULL,
+                PRIMARY KEY (session_id, group_id),
+                UNIQUE (session_id, position)
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -150,6 +158,60 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         return groups;
     }
 
+    public async Task<IReadOnlyList<DuplicateGroup>> LoadActiveBatchAsync(CancellationToken cancellationToken = default)
+    {
+        var groups = new List<DuplicateGroup>();
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT dg.immich_group_id, dg.asset_metadata_json, dg.status
+            FROM review_session rs
+            JOIN review_session_group rsg ON rsg.session_id = rs.id
+            JOIN duplicate_group dg ON dg.id = rsg.group_id
+            WHERE rs.completed_at IS NULL
+            ORDER BY rsg.position;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) groups.Add(ReadGroup(reader));
+        return groups;
+    }
+
+    public async Task<DuplicateGroup?> LoadNextActiveGroupAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT dg.immich_group_id, dg.asset_metadata_json, dg.status
+            FROM review_session rs
+            JOIN review_session_group rsg ON rsg.session_id = rs.id
+            JOIN duplicate_group dg ON dg.id = rsg.group_id
+            WHERE rs.completed_at IS NULL AND dg.status IN ('pending', 'failed')
+            ORDER BY rsg.position LIMIT 1;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadGroup(reader) : null;
+    }
+
+    public async Task<ReviewProgress> GetActiveProgressAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*),
+                   COALESCE(SUM(dg.status = 'reviewed'), 0),
+                   COALESCE(SUM(dg.status = 'skipped'), 0),
+                   COALESCE(SUM(dg.status = 'failed'), 0),
+                   COALESCE(SUM(dg.status IN ('pending', 'failed')), 0)
+            FROM review_session rs
+            JOIN review_session_group rsg ON rsg.session_id = rs.id
+            JOIN duplicate_group dg ON dg.id = rsg.group_id
+            WHERE rs.completed_at IS NULL;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return new(0, 0, 0, 0, 0);
+        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4));
+    }
+
     public async Task<DuplicateGroup?> LoadGroupAsync(string groupId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -164,6 +226,12 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
     }
 
     public async Task<ReviewSession> CreateOrResumeSessionAsync(int batchSize, CancellationToken cancellationToken = default)
+        => await CreateOrResumeSessionCoreAsync(batchSize, [], cancellationToken);
+
+    public async Task<ReviewSession> CreateOrResumeSessionAsync(int batchSize, IReadOnlyList<string> groupIds, CancellationToken cancellationToken = default)
+        => await CreateOrResumeSessionCoreAsync(batchSize, groupIds, cancellationToken);
+
+    private async Task<ReviewSession> CreateOrResumeSessionCoreAsync(int batchSize, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using (var find = connection.CreateCommand())
@@ -174,20 +242,25 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                 """;
             await using var reader = await find.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
-                return new(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3));
+            {
+                var existing = new ReviewSession(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3));
+                await reader.DisposeAsync();
+                await PopulateSessionAsync(connection, existing.Id, groupIds, cancellationToken);
+                return existing;
+            }
         }
 
         await using var insert = connection.CreateCommand();
         insert.CommandText = """
             INSERT INTO review_session (created_at, batch_size, sort_mode, current_position)
-            VALUES ($created, $size, 'oldest', (SELECT COUNT(*) FROM duplicate_group WHERE status <> 'pending'));
+            VALUES ($created, $size, 'oldest', 0);
             SELECT last_insert_rowid();
             """;
         insert.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
         insert.Parameters.AddWithValue("$size", batchSize);
         var id = (long)(await insert.ExecuteScalarAsync(cancellationToken) ?? throw new InvalidOperationException("Session was not created."));
-        var position = await CountCompletedAsync(connection, cancellationToken);
-        return new(id, batchSize, "oldest", position);
+        await PopulateSessionAsync(connection, id, groupIds, cancellationToken);
+        return new(id, batchSize, "oldest", 0);
     }
 
     private async Task RecordAsync(string groupId, ReviewStatus status, string? decisionJson, string? notes, CancellationToken cancellationToken)
@@ -205,6 +278,14 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
             UPDATE duplicate_group SET status = $status WHERE immich_group_id = $id;
             UPDATE review_session SET current_position = current_position + 1
             WHERE completed_at IS NULL AND $status <> 'failed';
+            UPDATE review_session SET completed_at = $reviewed
+            WHERE completed_at IS NULL
+              AND EXISTS (SELECT 1 FROM review_session_group WHERE session_id = review_session.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM review_session_group rsg
+                JOIN duplicate_group dg ON dg.id = rsg.group_id
+                WHERE rsg.session_id = review_session.id AND dg.status IN ('pending', 'failed')
+              );
             """;
         command.Parameters.AddWithValue("$id", groupId);
         command.Parameters.AddWithValue("$status", status.ToString().ToLowerInvariant());
@@ -254,6 +335,36 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM duplicate_group WHERE status <> 'pending';";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task PopulateSessionAsync(SqliteConnection connection, long sessionId, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)
+    {
+        if (groupIds.Count == 0) return;
+        await using var count = connection.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM review_session_group WHERE session_id = $sessionId;";
+        count.Parameters.AddWithValue("$sessionId", sessionId);
+        if (Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) > 0) return;
+
+        for (var position = 0; position < groupIds.Count; position++)
+        {
+            await using var insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO review_session_group (session_id, group_id, position)
+                SELECT $sessionId, id, $position FROM duplicate_group WHERE immich_group_id = $groupId;
+                """;
+            insert.Parameters.AddWithValue("$sessionId", sessionId);
+            insert.Parameters.AddWithValue("$position", position);
+            insert.Parameters.AddWithValue("$groupId", groupIds[position]);
+            if (await insert.ExecuteNonQueryAsync(cancellationToken) == 0)
+                throw new KeyNotFoundException($"Group '{groupIds[position]}' was not found.");
+        }
+    }
+
+    private static DuplicateGroup ReadGroup(SqliteDataReader reader)
+    {
+        var assets = JsonSerializer.Deserialize<DuplicateAsset[]>(reader.GetString(1))
+            ?? throw new InvalidDataException("Stored asset metadata is invalid.");
+        return new DuplicateGroup(reader.GetString(0), assets, Enum.Parse<ReviewStatus>(reader.GetString(2), true));
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

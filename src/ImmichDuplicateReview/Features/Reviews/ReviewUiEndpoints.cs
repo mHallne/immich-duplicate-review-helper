@@ -24,17 +24,17 @@ public static class ReviewUiEndpoints
             var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : 100;
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
-            _ = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size);
-            await store.CreateOrResumeSessionAsync(size, cancellationToken);
+            var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size);
+            await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), cancellationToken);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 
         endpoints.MapGet("/review", async (ReviewStore store, CancellationToken cancellationToken) =>
         {
-            var pending = await store.LoadPendingAsync(cancellationToken);
-            var group = pending.FirstOrDefault();
+            var group = await store.LoadNextActiveGroupAsync(cancellationToken);
             if (group is null) return Results.Content(Layout("<main><h1>Batch complete</h1><p>No pending groups remain.</p></main>"), "text/html");
-            return Results.Content(RenderReview(group, pending.Count), "text/html");
+            var progress = await store.GetActiveProgressAsync(cancellationToken);
+            return Results.Content(RenderReview(group, progress), "text/html");
         });
 
         endpoints.MapPost("/review/{groupId}/propose", async (string groupId, HttpRequest request, ReviewStore store, CancellationToken cancellationToken) =>
@@ -64,10 +64,11 @@ public static class ReviewUiEndpoints
         return endpoints;
     }
 
-    private static string RenderReview(DuplicateGroup group, int remaining)
+    private static string RenderReview(DuplicateGroup group, ReviewProgress progress)
     {
         var html = new StringBuilder($"""
-            <main><header><h1>Duplicate group</h1><div class="progress">Remaining: {remaining}</div></header>
+            <main><header><h1>Group {progress.Reviewed + progress.Skipped + 1} / {progress.Total}</h1>
+            <div class="progress">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
             <form id="decision" method="post" action="/review/{E(group.Id)}/propose"><div class="assets">
             """);
         for (var index = 0; index < group.Assets.Count; index++)

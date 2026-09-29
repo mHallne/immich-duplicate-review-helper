@@ -20,9 +20,11 @@ public static class BatchEndpoints
             await store.UpsertGroupsAsync(groups, cancellationToken);
             var pending = await store.LoadPendingAsync(cancellationToken);
             var batch = CreateBatch.Handle(pending, request.BatchSize);
-            var session = await store.CreateOrResumeSessionAsync(request.BatchSize, cancellationToken);
-            loggerFactory.CreateLogger("Batch").LogInformation("Batch created with {GroupCount} groups and size {BatchSize}", batch.Groups.Count, request.BatchSize);
-            return Results.Ok(new { session, batch.Groups });
+            var session = await store.CreateOrResumeSessionAsync(request.BatchSize, batch.Groups.Select(group => group.Id).ToArray(), cancellationToken);
+            var activeGroups = await store.LoadActiveBatchAsync(cancellationToken);
+            var progress = await store.GetActiveProgressAsync(cancellationToken);
+            loggerFactory.CreateLogger("Batch").LogInformation("Batch {SessionId} active with {GroupCount} groups and size {BatchSize}", session.Id, activeGroups.Count, session.BatchSize);
+            return Results.Ok(new { session, groups = activeGroups, progress });
         });
         return endpoints;
     }

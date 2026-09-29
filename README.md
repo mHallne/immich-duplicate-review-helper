@@ -6,7 +6,7 @@ A small, server-rendered sidecar for reviewing large Immich duplicate sets in re
 
 ## Current milestone
 
-The working MVP supports loading duplicate groups, oldest-first batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, explicit confirmation, local resume state, keyboard controls, health endpoints, and an end-to-end restart test.
+The working MVP supports loading duplicate groups, persisted oldest-first batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, explicit confirmation, accurate batch progress, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. A selected batch remains bounded after restart; newly discovered groups wait for a later batch.
 
 ## Immich API key
 
@@ -43,7 +43,7 @@ If the Immich network has a different name, change `networks.immich.name`.
 
 ## Persistence and backup
 
-Review state is stored at `${DATA_PATH}/reviews.db`; the Compose example uses a named volume. For a consistent backup, stop the helper and copy `reviews.db` (or back up the entire volume). Restoring that file resumes the active session.
+Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`; the Compose example uses a named volume. For a consistent backup, stop the helper and copy `reviews.db` (or back up the entire volume). Restoring that file resumes the same bounded batch and position.
 
 ## Safety
 

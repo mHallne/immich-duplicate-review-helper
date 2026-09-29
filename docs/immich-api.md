@@ -16,7 +16,7 @@ Authentication uses the `x-api-key` request header. Immich-specific request/resp
 
 ## Limitations
 
-- Immich returns duplicate groups as one collection; batching is local after synchronization.
+- Immich returns duplicate groups as one collection; ordered batch membership is persisted locally after synchronization.
 - Album membership is not present in the duplicate response and is not enriched in this milestone.
 - Combined resolve/stack actions use a persisted resolve checkpoint. A retry after stack failure does not repeat a successful duplicate resolution. A matching existing stack is detected before creation.
 - If system configuration cannot be read, trash actions fail closed. This avoids Immich behavior that can permanently delete when its Trash feature is disabled.

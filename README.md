@@ -50,3 +50,5 @@ Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`
 Every destructive proposal is displayed before execution. Trash decisions use Immich's duplicate resolver and are refused unless the helper confirms Immich Trash is enabled. The helper never requests permanent deletion, empties Trash, modifies source files, or chooses assets automatically. Failed API operations are recorded and never marked reviewed.
 
 Operational endpoints are `GET /health` and `GET /ready`; readiness requires both SQLite and authenticated Immich access.
+
+`DEFAULT_BATCH_SIZE` controls the initially selected batch size and must be `50`, `100`, `250`, or `500`. Dependency failures return a retryable error without exposing upstream details or credentials. The process remains live when SQLite initialization fails so orchestration can distinguish `/health` from `/ready`.

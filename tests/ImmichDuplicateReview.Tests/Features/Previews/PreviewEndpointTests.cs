@@ -1,5 +1,6 @@
 using System.Net;
 using ImmichDuplicateReview.Features.Batches;
+using ImmichDuplicateReview.Features.Reviews;
 using ImmichDuplicateReview.Integrations.Immich;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -32,6 +33,49 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/ready")).StatusCode);
     }
 
+    [Fact]
+    public async Task Immich_failure_returns_safe_gateway_error_and_unready_status()
+    {
+        await using var factory = new DependencyFactory(new UnavailableImmichClient());
+        var client = factory.CreateClient();
+
+        var preview = await client.GetAsync("/api/assets/asset-1/preview");
+        var ready = await client.GetAsync("/ready");
+
+        Assert.Equal(HttpStatusCode.BadGateway, preview.StatusCode);
+        Assert.Equal("application/problem+json", preview.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Immich is unavailable", await preview.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain("super-secret", await preview.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+    }
+
+    [Fact]
+    public async Task Sqlite_failure_keeps_liveness_up_but_readiness_down()
+    {
+        var invalidDatabasePath = Path.Combine(Path.GetTempPath(), $"sqlite-directory-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(invalidDatabasePath);
+        try
+        {
+            await using var factory = new DependencyFactory(new FakeImmichClient(), new ReviewStore(invalidDatabasePath));
+            var client = factory.CreateClient();
+
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/ready")).StatusCode);
+        }
+        finally
+        {
+            Directory.Delete(invalidDatabasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Configured_default_batch_size_is_selected_on_start_page()
+    {
+        await using var factory = new ConfiguredFactory("250");
+        var html = await factory.CreateClient().GetStringAsync("/");
+        Assert.Contains("<option selected>250</option>", html, StringComparison.Ordinal);
+    }
+
     public sealed class Factory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -53,5 +97,38 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         public Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class UnavailableImmichClient : IImmichClient
+    {
+        public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => Task.FromException<IReadOnlyList<DuplicateGroup>>(new ImmichApiException("upstream included super-secret"));
+        public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<PreviewContent>(new ImmichApiException("upstream included super-secret"));
+        public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
+        public Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
+        public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
+    }
+
+    private sealed class DependencyFactory(IImmichClient immich, ReviewStore? store = null) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Production");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IImmichClient>();
+                services.AddSingleton(immich);
+                if (store is not null)
+                {
+                    services.RemoveAll<ReviewStore>();
+                    services.AddSingleton(store);
+                }
+            });
+        }
+    }
+
+    private sealed class ConfiguredFactory(string batchSize) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseSetting("DEFAULT_BATCH_SIZE", batchSize);
     }
 }

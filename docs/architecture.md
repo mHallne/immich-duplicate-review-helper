@@ -13,3 +13,5 @@ Each feature keeps its endpoint, workflow, validation, and persistence operation
 SQLite initialization is intentionally idempotent and runs at startup. `review_session_group` persists the ordered membership of each batch, so synchronization cannot silently expand an active batch. Progress is calculated from that membership rather than from the global candidate set.
 
 Review state changes occur only after Immich reports success. A failed call records `failed`, preserves its decision JSON, remains visible for retry, and does not advance progress. Already-reviewed confirmations return without repeating the Immich operation. Combined resolve/stack decisions persist an intermediate resolve checkpoint so a stack retry does not repeat trash actions.
+
+Centralized exception handling maps Immich transport/API failures to generic `502` responses and unexpected failures to `500` without returning upstream response bodies. SQLite initialization failure is logged without terminating the host: liveness remains available while readiness reports the dependency failure.

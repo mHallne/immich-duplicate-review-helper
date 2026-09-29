@@ -9,19 +9,19 @@ public static class ReviewUiEndpoints
 {
     public static IEndpointRouteBuilder MapReviewUiEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/", () => Results.Content(Layout("""
+        endpoints.MapGet("/", (BatchOptions options) => Results.Content(Layout($$"""
             <main><h1>Immich Duplicate Review Helper</h1>
             <p>Review duplicate groups in a small, resumable batch. No action occurs without confirmation.</p>
             <form method="post" action="/review/start">
-              <label>Batch size <select name="batchSize"><option>50</option><option selected>100</option><option>250</option><option>500</option></select></label>
+              <label>Batch size <select name="batchSize">{{RenderBatchSizeOptions(options.DefaultSize)}}</select></label>
               <button type="submit">Load oldest duplicates</button>
             </form></main>
             """), "text/html"));
 
-        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, ReviewStore store, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, ReviewStore store, BatchOptions options, CancellationToken cancellationToken) =>
         {
             var form = await request.ReadFormAsync(cancellationToken);
-            var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : 100;
+            var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : options.DefaultSize;
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
             var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size);
@@ -123,6 +123,8 @@ public static class ReviewUiEndpoints
 
     private static string FormatBytes(long? bytes) => bytes is null ? "Unknown" : $"{bytes.Value / 1024d / 1024d:0.##} MB";
     private static string E(string value) => WebUtility.HtmlEncode(value);
+    private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 50, 100, 250, 500 }.Select(size =>
+        $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));
 
     private const string KeyboardScript = """
         let focused=0; const cards=[...document.querySelectorAll('.asset')];

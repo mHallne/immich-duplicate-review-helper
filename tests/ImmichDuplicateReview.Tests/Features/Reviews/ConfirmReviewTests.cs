@@ -94,6 +94,39 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         Assert.Contains(group.Id, entry.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Lost_resolve_response_is_reconciled_without_repeating_destructive_call()
+    {
+        var group = Group();
+        await using var store = await StoreWithAsync(group);
+        var immich = new FakeImmichClient { AmbiguousFailuresRemaining = 1, CurrentDuplicateGroups = [] };
+        var workflow = Workflow(store, immich);
+        var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => workflow.HandleAsync(group, decision));
+        await workflow.HandleAsync(group, decision);
+
+        Assert.Equal(1, immich.ResolveCalls);
+        Assert.Equal(1, immich.DuplicateLookupCalls);
+        Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
+    }
+
+    [Fact]
+    public async Task Unresolved_group_is_safely_retried_after_ambiguous_failure()
+    {
+        var group = Group();
+        await using var store = await StoreWithAsync(group);
+        var immich = new FakeImmichClient { AmbiguousFailuresRemaining = 1, CurrentDuplicateGroups = [group] };
+        var workflow = Workflow(store, immich);
+        var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => workflow.HandleAsync(group, decision));
+        await workflow.HandleAsync(group, decision);
+
+        Assert.Equal(2, immich.ResolveCalls);
+        Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
+    }
+
     private async Task<ReviewStore> StoreWithAsync(DuplicateGroup group)
     {
         var store = new ReviewStore(_databasePath);
@@ -120,6 +153,9 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         public Exception? Failure { get; init; }
         public Exception? TrashSafetyFailure { get; init; }
         public int StackFailuresRemaining { get; set; }
+        public int AmbiguousFailuresRemaining { get; set; }
+        public int DuplicateLookupCalls { get; private set; }
+        public IReadOnlyList<DuplicateGroup> CurrentDuplicateGroups { get; init; } = [];
         public int StackCalls { get; private set; }
         public List<string> Operations { get; } = [];
         public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => TrashSafetyFailure is null ? Task.CompletedTask : Task.FromException(TrashSafetyFailure);
@@ -130,13 +166,18 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
             if (StackFailuresRemaining-- > 0) return Task.FromException(new ImmichApiException("stack failed"));
             return Task.CompletedTask;
         }
-        public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default)
+        {
+            DuplicateLookupCalls++;
+            return Task.FromResult(CurrentDuplicateGroups);
+        }
         public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
         {
             ResolveCalls++;
             Operations.Add("resolve");
+            if (AmbiguousFailuresRemaining-- > 0) return Task.FromException(new HttpRequestException("response lost"));
             return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
         }
     }

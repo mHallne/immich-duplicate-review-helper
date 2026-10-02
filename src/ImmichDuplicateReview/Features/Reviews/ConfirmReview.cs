@@ -28,9 +28,24 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient,
         {
             if (!await store.IsResolveCompletedAsync(group.Id, cancellationToken))
             {
-                if (validated.Trash.Count > 0) await immichClient.EnsureTrashEnabledAsync(cancellationToken);
-                await immichClient.ResolveAsync(group.Id, validated.Keep, validated.Trash, cancellationToken);
-                await store.MarkResolveCompletedAsync(group.Id, cancellationToken);
+                var started = await store.IsResolveStartedAsync(group.Id, cancellationToken);
+                if (started)
+                {
+                    var groups = await immichClient.GetDuplicateGroupsAsync(cancellationToken);
+                    if (groups.All(candidate => candidate.Id != group.Id))
+                    {
+                        logger.LogInformation("Resolve outcome reconciled for group {GroupId}; group is no longer returned by Immich", group.Id);
+                        await store.MarkResolveCompletedAsync(group.Id, cancellationToken);
+                    }
+                }
+
+                if (!await store.IsResolveCompletedAsync(group.Id, cancellationToken))
+                {
+                    if (validated.Trash.Count > 0) await immichClient.EnsureTrashEnabledAsync(cancellationToken);
+                    if (!started) await store.MarkResolveStartedAsync(group.Id, cancellationToken);
+                    await immichClient.ResolveAsync(group.Id, validated.Keep, validated.Trash, cancellationToken);
+                    await store.MarkResolveCompletedAsync(group.Id, cancellationToken);
+                }
             }
             if (validated.Stack.Count > 0)
             {

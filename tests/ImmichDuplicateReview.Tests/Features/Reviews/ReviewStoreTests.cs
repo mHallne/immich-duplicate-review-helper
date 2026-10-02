@@ -1,5 +1,6 @@
 using ImmichDuplicateReview.Features.Batches;
 using ImmichDuplicateReview.Features.Reviews;
+using Microsoft.Data.Sqlite;
 
 namespace ImmichDuplicateReview.Tests.Features.Reviews;
 
@@ -143,6 +144,25 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         Assert.Equal(ReviewStatus.Failed, attempt!.Status);
         Assert.Equal(decision, attempt.DecisionJson);
         Assert.Equal("ImmichApiException", attempt.FailureType);
+    }
+
+    [Fact]
+    public async Task Initialization_migrates_existing_action_checkpoint_table()
+    {
+        await using (var connection = new SqliteConnection($"Data Source={_databasePath}"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TABLE review_action (group_id INTEGER PRIMARY KEY, resolve_completed_at TEXT, stack_completed_at TEXT);";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using var store = new ReviewStore(_databasePath);
+        await store.InitializeAsync();
+        await store.UpsertGroupsAsync([Group("g1")]);
+        await store.MarkResolveStartedAsync("g1");
+
+        Assert.True(await store.IsResolveStartedAsync("g1"));
     }
 
     private static DuplicateGroup Group(string id, int day = 1) => new(id,

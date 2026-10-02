@@ -52,6 +52,7 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
             );
             CREATE TABLE IF NOT EXISTS review_action (
                 group_id INTEGER PRIMARY KEY REFERENCES duplicate_group(id),
+                resolve_started_at TEXT,
                 resolve_completed_at TEXT,
                 stack_completed_at TEXT
             );
@@ -64,6 +65,7 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await EnsureColumnAsync(connection, "review_action", "resolve_started_at", "TEXT", cancellationToken);
     }
 
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
@@ -121,6 +123,12 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
 
     public Task<bool> IsResolveCompletedAsync(string groupId, CancellationToken cancellationToken = default) =>
         IsActionCompletedAsync(groupId, "resolve_completed_at", cancellationToken);
+
+    public Task<bool> IsResolveStartedAsync(string groupId, CancellationToken cancellationToken = default) =>
+        IsActionCompletedAsync(groupId, "resolve_started_at", cancellationToken);
+
+    public Task MarkResolveStartedAsync(string groupId, CancellationToken cancellationToken = default) =>
+        MarkActionCompletedAsync(groupId, "resolve_started_at", cancellationToken);
 
     public Task MarkResolveCompletedAsync(string groupId, CancellationToken cancellationToken = default) =>
         MarkActionCompletedAsync(groupId, "resolve_completed_at", cancellationToken);
@@ -403,6 +411,20 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM duplicate_group WHERE status <> 'pending';";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task EnsureColumnAsync(SqliteConnection connection, string table, string column, string type, CancellationToken cancellationToken)
+    {
+        await using var inspect = connection.CreateCommand();
+        inspect.CommandText = $"PRAGMA table_info({table});";
+        await using var reader = await inspect.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return;
+        await reader.DisposeAsync();
+
+        await using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type};";
+        await alter.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task PopulateSessionAsync(SqliteConnection connection, long sessionId, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)

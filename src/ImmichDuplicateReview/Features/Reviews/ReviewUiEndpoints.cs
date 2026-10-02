@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using ImmichDuplicateReview.Features.Batches;
 using ImmichDuplicateReview.Integrations.Immich;
 
@@ -40,7 +41,8 @@ public static class ReviewUiEndpoints
             group = (await albumEnricher.EnrichAsync([group], cancellationToken))[0];
             await store.UpsertGroupsAsync([group], cancellationToken);
             var progress = await store.GetActiveProgressAsync(cancellationToken);
-            return Results.Content(RenderReview(group, progress), "text/html");
+            var attempt = group.Status == ReviewStatus.Failed ? await store.LoadReviewAttemptAsync(group.Id, cancellationToken) : null;
+            return Results.Content(RenderReview(group, progress, attempt), "text/html");
         });
 
         endpoints.MapPost("/review/navigation/{direction}", async (string direction, ReviewStore store, CancellationToken cancellationToken) =>
@@ -83,26 +85,33 @@ public static class ReviewUiEndpoints
         return endpoints;
     }
 
-    private static string RenderReview(DuplicateGroup group, ReviewProgress progress)
+    private static string RenderReview(DuplicateGroup group, ReviewProgress progress, ReviewAttempt? attempt)
     {
         var actionable = group.Status is ReviewStatus.Pending or ReviewStatus.Failed;
+        var saved = attempt?.DecisionJson is { } json ? JsonSerializer.Deserialize<SavedDecision>(json, JsonOptions) : null;
+        var failureNotice = group.Status == ReviewStatus.Failed
+            ? "<aside role=\"alert\"><strong>Previous attempt failed.</strong> Your saved decision is restored. Review it and confirm again when Immich is available.</aside>"
+            : string.Empty;
         var html = new StringBuilder($"""
             <main><header><h1>Group {progress.CurrentPosition + 1} / {progress.Total}</h1>
             <div class="progress">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
-            <p class="status">Status: {group.Status}</p>
+            <p class="status">Status: {group.Status}</p>{failureNotice}
             <form id="decision" method="post" action="/review/{E(group.Id)}/propose"><div class="assets">
             """);
         for (var index = 0; index < group.Assets.Count; index++)
         {
             var asset = group.Assets[index];
-            var keep = index == 0 ? "checked" : string.Empty;
-            var trash = index == 0 ? string.Empty : "checked";
+            var isKept = saved?.Keep.Contains(asset.Id, StringComparer.Ordinal) ?? index == 0;
+            var isStacked = saved?.Stack.Contains(asset.Id, StringComparer.Ordinal) ?? false;
+            var keep = isKept ? "checked" : string.Empty;
+            var trash = isKept ? string.Empty : "checked";
+            var stack = isStacked ? "checked" : string.Empty;
             var controls = actionable
                 ? $"""
                   <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} data-keep> Keep</label>
                   <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} data-trash> Trash</label>
-                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" data-stack> Stack</label>
-                  <input type="hidden" name="{(index == 0 ? "keepAssetIds" : "trashAssetIds")}" value="{E(asset.Id)}" data-decision>
+                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" {stack} data-stack> Stack</label>
+                  <input type="hidden" name="{(isKept ? "keepAssetIds" : "trashAssetIds")}" value="{E(asset.Id)}" data-decision>
                   """
                 : "<p>Decision already recorded. This group is read-only.</p>";
             html.Append($"""
@@ -117,7 +126,8 @@ public static class ReviewUiEndpoints
                 </article>
                 """);
         }
-        var decisionAction = actionable ? "<div class=\"actions\"><button type=\"submit\">Review proposed changes</button></div>" : string.Empty;
+        var decisionLabel = group.Status == ReviewStatus.Failed ? "Review saved decision" : "Review proposed changes";
+        var decisionAction = actionable ? $"<div class=\"actions\"><button type=\"submit\">{decisionLabel}</button></div>" : string.Empty;
         var skipAction = actionable ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>" : string.Empty;
         html.Append($"""
             </div>{decisionAction}</form>
@@ -157,6 +167,8 @@ public static class ReviewUiEndpoints
         ? "Unavailable"
         : asset.AlbumNames.Count == 0 ? "None" : E(string.Join(", ", asset.AlbumNames));
     private static string E(string value) => WebUtility.HtmlEncode(value);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private sealed record SavedDecision(string[] Keep, string[] Trash, string[] Stack);
     private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 50, 100, 250, 500 }.Select(size =>
         $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));
     private static string RenderSortModeOptions() => """

@@ -70,6 +70,25 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
         Assert.Equal(1, immich.ResolveCalls);
     }
 
+    [Fact]
+    public async Task Failed_review_page_restores_saved_choices_and_requires_confirmation_to_retry()
+    {
+        var immich = new ScenarioImmichClient();
+        await using var factory = new Factory(_dataPath, immich);
+        var client = factory.CreateClient();
+        (await client.PostAsJsonAsync("/api/batches", new { batchSize = 100 })).EnsureSuccessStatusCode();
+        var store = factory.Services.GetRequiredService<ReviewStore>();
+        await store.MarkFailedAsync("g1", "{\"keep\":[\"g1-b\"],\"trash\":[\"g1-a\"],\"stack\":[\"g1-b\"]}", "ImmichApiException");
+
+        var page = await client.GetStringAsync("/review");
+
+        Assert.Contains("Previous attempt failed", page, StringComparison.Ordinal);
+        Assert.Contains("Review saved decision", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"keepAssetIds\" value=\"g1-b\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"trashAssetIds\" value=\"g1-a\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("ImmichApiException", page, StringComparison.Ordinal);
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Directory.Exists(_dataPath)) Directory.Delete(_dataPath, true);

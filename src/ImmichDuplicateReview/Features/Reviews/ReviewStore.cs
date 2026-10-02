@@ -7,6 +7,7 @@ namespace ImmichDuplicateReview.Features.Reviews;
 
 public sealed record ReviewSession(long Id, int BatchSize, string SortMode, int CurrentPosition);
 public sealed record ReviewProgress(int Total, int Reviewed, int Skipped, int Failed, int Remaining, int CurrentPosition);
+public sealed record ReviewAttempt(ReviewStatus Status, string? DecisionJson, string? FailureType);
 
 public sealed class ReviewStore(string databasePath) : IAsyncDisposable
 {
@@ -135,6 +136,25 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         command.Parameters.AddWithValue("$id", groupId);
         var result = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return result is null ? null : Enum.Parse<ReviewStatus>(result, true);
+    }
+
+    public async Task<ReviewAttempt?> LoadReviewAttemptAsync(string groupId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT r.status, r.decision_json, r.notes
+            FROM review r JOIN duplicate_group dg ON dg.id = r.group_id
+            WHERE dg.immich_group_id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", groupId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new ReviewAttempt(
+                Enum.Parse<ReviewStatus>(reader.GetString(0), true),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2))
+            : null;
     }
 
     public async Task<IReadOnlyList<DuplicateGroup>> LoadPendingAsync(CancellationToken cancellationToken = default)

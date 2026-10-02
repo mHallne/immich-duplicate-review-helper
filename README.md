@@ -6,7 +6,7 @@ A small, server-rendered sidecar for reviewing large Immich duplicate sets in re
 
 ## Current milestone
 
-The working application supports loading duplicate groups, persisted sortable batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, Previous/Next group navigation, explicit confirmation, accurate batch progress, local resume state, keyboard controls, health endpoints, and an end-to-end restart test. A selected batch remains bounded after restart; newly discovered groups wait for a later batch.
+The working application supports loading duplicate groups, persisted sortable batches, side-by-side previews, Keep/Trash/Stack decisions, Skip, Previous/Next group navigation, explicit confirmation, accurate batch progress, local resume state, failed-decision retry, keyboard controls, health endpoints, and an end-to-end restart test. A selected batch remains bounded after restart; newly discovered groups wait for a later batch.
 
 Batch sorting supports oldest, newest, smallest group, largest group, largest potential storage saving, path, and filename. The chosen ordering is stored with the session and survives restart.
 
@@ -51,7 +51,7 @@ Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`
 
 ## Safety
 
-Every destructive proposal is displayed before execution. Trash decisions use Immich's duplicate resolver and are refused unless the helper confirms Immich Trash is enabled. The helper never requests permanent deletion, empties Trash, modifies source files, or chooses assets automatically. Failed API operations are recorded and never marked reviewed.
+Every destructive proposal is displayed before execution. Trash decisions use Immich's duplicate resolver and are refused unless the helper confirms Immich Trash is enabled. The helper never requests permanent deletion, empties Trash, modifies source files, or chooses assets automatically. Failed API operations are recorded and never marked reviewed; the saved choices are restored for review and explicit confirmation before retrying.
 
 Operational endpoints are `GET /health` and `GET /ready`; readiness requires both SQLite and authenticated Immich access.
 

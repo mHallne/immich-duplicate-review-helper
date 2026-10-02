@@ -125,6 +125,26 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         Assert.Equal("g1", (await restarted.MoveActiveCursorAsync(-20))!.Id);
     }
 
+    [Fact]
+    public async Task Failed_review_preserves_decision_and_safe_error_for_retry_after_restart()
+    {
+        const string decision = "{\"keep\":[\"g1-a\"],\"trash\":[\"g1-b\"],\"stack\":[]}";
+        await using (var first = new ReviewStore(_databasePath))
+        {
+            await first.InitializeAsync();
+            await first.UpsertGroupsAsync([Group("g1")]);
+            await first.MarkFailedAsync("g1", decision, "ImmichApiException");
+        }
+
+        await using var restarted = new ReviewStore(_databasePath);
+        await restarted.InitializeAsync();
+
+        var attempt = await restarted.LoadReviewAttemptAsync("g1");
+        Assert.Equal(ReviewStatus.Failed, attempt!.Status);
+        Assert.Equal(decision, attempt.DecisionJson);
+        Assert.Equal("ImmichApiException", attempt.FailureType);
+    }
+
     private static DuplicateGroup Group(string id, int day = 1) => new(id,
     [
         new($"{id}-a", "a.jpg", DateTimeOffset.UnixEpoch.AddDays(day)),

@@ -38,7 +38,7 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient)
         }
         catch (Exception exception) when (exception is ImmichApiException or HttpRequestException)
         {
-            await store.MarkFailedAsync(group.Id, decisionJson, exception.Message, cancellationToken);
+            await store.MarkFailedAsync(group.Id, decisionJson, exception.GetType().Name, cancellationToken);
             throw;
         }
     }

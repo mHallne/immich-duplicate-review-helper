@@ -39,6 +39,7 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient,
                 await store.MarkStackCompletedAsync(group.Id, cancellationToken);
             }
             await store.MarkReviewedAsync(group.Id, decisionJson, cancellationToken);
+            logger.LogInformation("Review confirmed for group {GroupId}", group.Id);
         }
         catch (Exception exception) when (exception is ImmichApiException or HttpRequestException)
         {

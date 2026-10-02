@@ -8,9 +8,10 @@ public static class ReviewEndpoints
 {
     public static IEndpointRouteBuilder MapReviewEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/api/review/next", async (ReviewStore store, CancellationToken cancellationToken) =>
+        endpoints.MapGet("/api/review/next", async (ReviewStore store, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
         {
             var group = await store.LoadCurrentActiveGroupAsync(cancellationToken);
+            if (group is not null) loggerFactory.CreateLogger("Review").LogInformation("Group {GroupId} loaded", group.Id);
             return group is null ? Results.NoContent() : Results.Ok(group);
         });
 
@@ -35,7 +36,6 @@ public static class ReviewEndpoints
             if (group is null) return Results.NotFound();
             var decision = ReviewDecision.Create(group, request.KeepAssetIds, request.TrashAssetIds, request.StackAssetIds);
             await workflow.HandleAsync(group, decision, cancellationToken);
-            loggerFactory.CreateLogger("Review").LogInformation("Review confirmed for group {GroupId}", groupId);
             return Results.NoContent();
         });
         return endpoints;

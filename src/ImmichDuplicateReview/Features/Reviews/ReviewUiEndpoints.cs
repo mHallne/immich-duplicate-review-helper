@@ -20,7 +20,7 @@ public static class ReviewUiEndpoints
             </form></main>
             """), "text/html"));
 
-        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, AlbumMetadataEnricher albumEnricher, ReviewStore store, BatchOptions options, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, AlbumMetadataEnricher albumEnricher, ReviewStore store, BatchOptions options, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : options.DefaultSize;
@@ -28,13 +28,14 @@ public static class ReviewUiEndpoints
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
             var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size, sortMode);
-            await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
+            var session = await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
             var activeGroups = await albumEnricher.EnrichAsync(await store.LoadActiveBatchAsync(cancellationToken), cancellationToken);
             await store.UpsertGroupsAsync(activeGroups, cancellationToken);
+            loggerFactory.CreateLogger("Batch").LogInformation("Batch {SessionId} active with {GroupCount} groups and size {BatchSize}", session.Id, activeGroups.Count, session.BatchSize);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 
-        endpoints.MapGet("/review", async (ReviewStore store, AlbumMetadataEnricher albumEnricher, CancellationToken cancellationToken) =>
+        endpoints.MapGet("/review", async (ReviewStore store, AlbumMetadataEnricher albumEnricher, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
         {
             var group = await store.LoadCurrentActiveGroupAsync(cancellationToken);
             if (group is null) return Results.Content(Layout("<main><h1>Batch complete</h1><p>No pending groups remain.</p></main>"), "text/html");
@@ -42,6 +43,7 @@ public static class ReviewUiEndpoints
             await store.UpsertGroupsAsync([group], cancellationToken);
             var progress = await store.GetActiveProgressAsync(cancellationToken);
             var attempt = group.Status == ReviewStatus.Failed ? await store.LoadReviewAttemptAsync(group.Id, cancellationToken) : null;
+            loggerFactory.CreateLogger("Review").LogInformation("Group {GroupId} loaded", group.Id);
             return Results.Content(RenderReview(group, progress, attempt), "text/html");
         });
 
@@ -77,9 +79,10 @@ public static class ReviewUiEndpoints
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 
-        endpoints.MapPost("/review/{groupId}/skip", async (string groupId, ReviewStore store, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/review/{groupId}/skip", async (string groupId, ReviewStore store, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
         {
             await store.SkipAsync(groupId, null, cancellationToken);
+            loggerFactory.CreateLogger("Review").LogInformation("Review skipped for group {GroupId}", groupId);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
         return endpoints;

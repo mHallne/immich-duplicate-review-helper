@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace ImmichDuplicateReview.Tests.Features.Reviews;
 
@@ -33,6 +34,7 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.Contains("Highest resolution", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
+            Assert.Contains(first.Logs, entry => entry.Contains("Group g1 loaded", StringComparison.Ordinal));
 
             var nextPage = await client.PostAsync("/review/navigation/next", null);
             nextPage.EnsureSuccessStatusCode();
@@ -100,6 +102,8 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
 
     private sealed class Factory(string dataPath, IImmichClient immich) : WebApplicationFactory<Program>
     {
+        public List<string> Logs { get; } = [];
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["DATA_PATH"] = dataPath }));
@@ -108,9 +112,24 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
                 services.RemoveAll<IImmichClient>();
                 services.RemoveAll<ReviewStore>();
                 services.AddSingleton(immich);
+                services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(Logs));
                 Directory.CreateDirectory(dataPath);
                 services.AddSingleton(new ReviewStore(Path.Combine(dataPath, "reviews.db")));
             });
+        }
+    }
+
+    private sealed class CapturingLoggerProvider(List<string> entries) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(entries);
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(List<string> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                entries.Add(formatter(state, exception));
         }
     }
 

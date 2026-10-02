@@ -1,6 +1,8 @@
 using ImmichDuplicateReview.Features.Batches;
 using ImmichDuplicateReview.Features.Reviews;
 using ImmichDuplicateReview.Integrations.Immich;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ImmichDuplicateReview.Tests.Features.Reviews;
 
@@ -14,7 +16,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         var group = Group();
         await using var store = await StoreWithAsync(group);
         var immich = new FakeImmichClient();
-        var workflow = new ConfirmReview(store, immich);
+        var workflow = Workflow(store, immich);
         var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
 
         await workflow.HandleAsync(group, decision);
@@ -30,7 +32,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         var group = Group();
         await using var store = await StoreWithAsync(group);
         var immich = new FakeImmichClient { Failure = new ImmichApiException("unavailable") };
-        var workflow = new ConfirmReview(store, immich);
+        var workflow = Workflow(store, immich);
         var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
 
         await Assert.ThrowsAsync<ImmichApiException>(() => workflow.HandleAsync(group, decision));
@@ -46,7 +48,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         var group = Group();
         await using var store = await StoreWithAsync(group);
         var immich = new FakeImmichClient { TrashSafetyFailure = new ImmichApiException("Trash disabled") };
-        var workflow = new ConfirmReview(store, immich);
+        var workflow = Workflow(store, immich);
 
         await Assert.ThrowsAsync<ImmichApiException>(() => workflow.HandleAsync(group, ReviewDecision.Create(group, ["a"], ["b"], [])));
 
@@ -65,7 +67,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         ]);
         await using var store = await StoreWithAsync(group);
         var immich = new FakeImmichClient { StackFailuresRemaining = 1 };
-        var workflow = new ConfirmReview(store, immich);
+        var workflow = Workflow(store, immich);
         var decision = ReviewDecision.Create(group, ["a", "c"], ["b"], ["a", "c"]);
 
         await Assert.ThrowsAsync<ImmichApiException>(() => workflow.HandleAsync(group, decision));
@@ -77,6 +79,21 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
     }
 
+    [Fact]
+    public async Task Retrying_failed_review_writes_structured_retry_log()
+    {
+        var group = Group();
+        await using var store = await StoreWithAsync(group);
+        await store.MarkFailedAsync(group.Id, "{}", "ImmichApiException");
+        var logger = new CapturingLogger();
+        var workflow = new ConfirmReview(store, new FakeImmichClient(), logger);
+
+        await workflow.HandleAsync(group, ReviewDecision.Create(group, ["a"], ["b"], []));
+
+        var entry = Assert.Single(logger.Entries, item => item.EventId.Name == "ReviewRetry");
+        Assert.Contains(group.Id, entry.Message, StringComparison.Ordinal);
+    }
+
     private async Task<ReviewStore> StoreWithAsync(DuplicateGroup group)
     {
         var store = new ReviewStore(_databasePath);
@@ -84,6 +101,9 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         await store.UpsertGroupsAsync([group]);
         return store;
     }
+
+    private static ConfirmReview Workflow(ReviewStore store, IImmichClient immich) =>
+        new(store, immich, NullLogger<ConfirmReview>.Instance);
 
     private static DuplicateGroup Group() => new("g", [new("a", "a.jpg", DateTimeOffset.UnixEpoch), new("b", "b.jpg", DateTimeOffset.UnixEpoch)]);
 
@@ -119,5 +139,14 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
             Operations.Add("resolve");
             return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
         }
+    }
+
+    private sealed class CapturingLogger : ILogger<ConfirmReview>
+    {
+        public List<(EventId EventId, string Message)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((eventId, formatter(state, exception)));
     }
 }

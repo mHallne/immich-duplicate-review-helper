@@ -67,13 +67,13 @@ public static class ReviewUiEndpoints
             return Results.Content(RenderProposal(group, decision), "text/html");
         }).DisableAntiforgery();
 
-        endpoints.MapPost("/review/{groupId}/confirm", async (string groupId, HttpRequest request, ReviewStore store, IImmichClient immich, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/review/{groupId}/confirm", async (string groupId, HttpRequest request, ReviewStore store, ConfirmReview workflow, CancellationToken cancellationToken) =>
         {
             var group = await store.LoadGroupAsync(groupId, cancellationToken);
             if (group is null) return Results.NotFound();
             var form = await request.ReadFormAsync(cancellationToken);
             var decision = ReviewDecision.Create(group, form["keepAssetIds"], form["trashAssetIds"], form["stackAssetIds"]);
-            await new ConfirmReview(store, immich).HandleAsync(group, decision, cancellationToken);
+            await workflow.HandleAsync(group, decision, cancellationToken);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 

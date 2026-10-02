@@ -4,13 +4,17 @@ using ImmichDuplicateReview.Integrations.Immich;
 
 namespace ImmichDuplicateReview.Features.Reviews;
 
-public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient)
+public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient, ILogger<ConfirmReview> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly EventId RetryEvent = new(1001, "ReviewRetry");
 
     public async Task HandleAsync(DuplicateGroup group, ReviewDecision decision, CancellationToken cancellationToken = default)
     {
-        if (await store.GetStatusAsync(group.Id, cancellationToken) == ReviewStatus.Reviewed) return;
+        var status = await store.GetStatusAsync(group.Id, cancellationToken);
+        if (status == ReviewStatus.Reviewed) return;
+        if (status == ReviewStatus.Failed)
+            logger.LogInformation(RetryEvent, "Retrying review for group {GroupId}", group.Id);
 
         var validated = ReviewDecision.Create(group, decision.Keep, decision.Trash, decision.Stack);
         var decisionJson = JsonSerializer.Serialize(new

@@ -27,14 +27,14 @@ public static class ReviewEndpoints
             string groupId,
             ConfirmReviewRequest request,
             ReviewStore store,
-            IImmichClient immich,
+            ConfirmReview workflow,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
             var group = await store.LoadGroupAsync(groupId, cancellationToken);
             if (group is null) return Results.NotFound();
             var decision = ReviewDecision.Create(group, request.KeepAssetIds, request.TrashAssetIds, request.StackAssetIds);
-            await new ConfirmReview(store, immich).HandleAsync(group, decision, cancellationToken);
+            await workflow.HandleAsync(group, decision, cancellationToken);
             loggerFactory.CreateLogger("Review").LogInformation("Review confirmed for group {GroupId}", groupId);
             return Results.NoContent();
         });

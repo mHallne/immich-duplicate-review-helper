@@ -31,7 +31,7 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         {
             await first.InitializeAsync();
             await first.UpsertGroupsAsync([Group("g1", 1), Group("g2", 2), Group("g3", 3)]);
-            await first.CreateOrResumeSessionAsync(100);
+            await first.CreateOrResumeSessionAsync(100, ["g1", "g2", "g3"]);
             await first.MarkReviewedAsync("g1", "{\"keep\":[\"g1-a\"],\"trash\":[\"g1-b\"]}");
             await first.SkipAsync("g2", null);
         }
@@ -103,6 +103,26 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         var session = await restarted.CreateOrResumeSessionAsync(100);
 
         Assert.Equal("newest", session.SortMode);
+    }
+
+    [Fact]
+    public async Task Group_cursor_moves_within_batch_bounds_and_survives_restart()
+    {
+        await using (var first = new ReviewStore(_databasePath))
+        {
+            await first.InitializeAsync();
+            await first.UpsertGroupsAsync([Group("g1", 1), Group("g2", 2), Group("g3", 3)]);
+            await first.CreateOrResumeSessionAsync(100, ["g1", "g2", "g3"]);
+
+            Assert.Equal("g1", (await first.LoadCurrentActiveGroupAsync())!.Id);
+            Assert.Equal("g2", (await first.MoveActiveCursorAsync(1))!.Id);
+            Assert.Equal("g3", (await first.MoveActiveCursorAsync(20))!.Id);
+        }
+
+        await using var restarted = new ReviewStore(_databasePath);
+        await restarted.InitializeAsync();
+        Assert.Equal("g3", (await restarted.LoadCurrentActiveGroupAsync())!.Id);
+        Assert.Equal("g1", (await restarted.MoveActiveCursorAsync(-20))!.Id);
     }
 
     private static DuplicateGroup Group(string id, int day = 1) => new(id,

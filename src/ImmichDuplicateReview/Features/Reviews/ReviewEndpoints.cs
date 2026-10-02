@@ -10,7 +10,7 @@ public static class ReviewEndpoints
     {
         endpoints.MapGet("/api/review/next", async (ReviewStore store, CancellationToken cancellationToken) =>
         {
-            var group = await store.LoadNextActiveGroupAsync(cancellationToken);
+            var group = await store.LoadCurrentActiveGroupAsync(cancellationToken);
             return group is null ? Results.NoContent() : Results.Ok(group);
         });
 

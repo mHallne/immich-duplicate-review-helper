@@ -30,6 +30,13 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
 
+            var nextPage = await client.PostAsync("/review/navigation/next", null);
+            nextPage.EnsureSuccessStatusCode();
+            Assert.Contains("g2-0.jpg", await nextPage.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            var previousPage = await client.PostAsync("/review/navigation/previous", null);
+            previousPage.EnsureSuccessStatusCode();
+            Assert.Contains("g1-0.jpg", await previousPage.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
             var proposal = await client.PostAsync("/review/g1/propose", new FormUrlEncodedContent(
             [
                 new("keepAssetIds", "g1-a"),

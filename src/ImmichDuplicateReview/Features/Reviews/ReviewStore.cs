@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 namespace ImmichDuplicateReview.Features.Reviews;
 
 public sealed record ReviewSession(long Id, int BatchSize, string SortMode, int CurrentPosition);
-public sealed record ReviewProgress(int Total, int Reviewed, int Skipped, int Failed, int Remaining);
+public sealed record ReviewProgress(int Total, int Reviewed, int Skipped, int Failed, int Remaining, int CurrentPosition);
 
 public sealed class ReviewStore(string databasePath) : IAsyncDisposable
 {
@@ -192,6 +192,38 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         return await reader.ReadAsync(cancellationToken) ? ReadGroup(reader) : null;
     }
 
+    public async Task<DuplicateGroup?> LoadCurrentActiveGroupAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT dg.immich_group_id, dg.asset_metadata_json, dg.status
+            FROM review_session rs
+            JOIN review_session_group rsg ON rsg.session_id = rs.id AND rsg.position = rs.current_position
+            JOIN duplicate_group dg ON dg.id = rsg.group_id
+            WHERE rs.completed_at IS NULL
+            ORDER BY rs.id DESC LIMIT 1;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadGroup(reader) : null;
+    }
+
+    public async Task<DuplicateGroup?> MoveActiveCursorAsync(int offset, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE review_session
+            SET current_position = MIN(
+                MAX(current_position + $offset, 0),
+                COALESCE((SELECT MAX(position) FROM review_session_group WHERE session_id = review_session.id), 0))
+            WHERE id = (SELECT id FROM review_session WHERE completed_at IS NULL ORDER BY id DESC LIMIT 1);
+            """;
+        command.Parameters.AddWithValue("$offset", offset);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await LoadCurrentActiveGroupAsync(cancellationToken);
+    }
+
     public async Task<ReviewProgress> GetActiveProgressAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -201,15 +233,16 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                    COALESCE(SUM(dg.status = 'reviewed'), 0),
                    COALESCE(SUM(dg.status = 'skipped'), 0),
                    COALESCE(SUM(dg.status = 'failed'), 0),
-                   COALESCE(SUM(dg.status IN ('pending', 'failed')), 0)
+                   COALESCE(SUM(dg.status IN ('pending', 'failed')), 0),
+                   rs.current_position
             FROM review_session rs
             JOIN review_session_group rsg ON rsg.session_id = rs.id
             JOIN duplicate_group dg ON dg.id = rsg.group_id
             WHERE rs.completed_at IS NULL;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return new(0, 0, 0, 0, 0);
-        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4));
+        if (!await reader.ReadAsync(cancellationToken)) return new(0, 0, 0, 0, 0, 0);
+        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5));
     }
 
     public async Task<DuplicateGroup?> LoadGroupAsync(string groupId, CancellationToken cancellationToken = default)
@@ -280,7 +313,18 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                 status = excluded.status, decision_json = excluded.decision_json,
                 reviewed_at = excluded.reviewed_at, notes = excluded.notes;
             UPDATE duplicate_group SET status = $status WHERE immich_group_id = $id;
-            UPDATE review_session SET current_position = current_position + 1
+            UPDATE review_session
+            SET current_position = COALESCE(
+                (SELECT MIN(rsg.position) FROM review_session_group rsg
+                 JOIN duplicate_group dg ON dg.id = rsg.group_id
+                 WHERE rsg.session_id = review_session.id
+                   AND rsg.position > review_session.current_position
+                   AND dg.status IN ('pending', 'failed')),
+                (SELECT MIN(rsg.position) FROM review_session_group rsg
+                 JOIN duplicate_group dg ON dg.id = rsg.group_id
+                 WHERE rsg.session_id = review_session.id
+                   AND dg.status IN ('pending', 'failed')),
+                current_position)
             WHERE completed_at IS NULL AND $status <> 'failed';
             UPDATE review_session SET completed_at = $reviewed
             WHERE completed_at IS NULL

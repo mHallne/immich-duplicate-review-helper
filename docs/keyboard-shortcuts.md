@@ -9,7 +9,7 @@ Shortcuts are active on the review page and are ignored while typing in an input
 | `S` | Toggle Stack for a focused kept asset. |
 | `X` | Skip the current group. |
 | `Enter` | Open the exact-result confirmation page. |
-| `Left` / `Right` | Move focus between assets. |
+| `Left` / `Right` | Open the previous or next group in the active batch. |
 | `F` | Show the focused preview full-screen. |
 
 Mouse and touch controls remain available for every action.

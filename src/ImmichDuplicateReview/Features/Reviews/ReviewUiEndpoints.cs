@@ -33,11 +33,24 @@ public static class ReviewUiEndpoints
 
         endpoints.MapGet("/review", async (ReviewStore store, CancellationToken cancellationToken) =>
         {
-            var group = await store.LoadNextActiveGroupAsync(cancellationToken);
+            var group = await store.LoadCurrentActiveGroupAsync(cancellationToken);
             if (group is null) return Results.Content(Layout("<main><h1>Batch complete</h1><p>No pending groups remain.</p></main>"), "text/html");
             var progress = await store.GetActiveProgressAsync(cancellationToken);
             return Results.Content(RenderReview(group, progress), "text/html");
         });
+
+        endpoints.MapPost("/review/navigation/{direction}", async (string direction, ReviewStore store, CancellationToken cancellationToken) =>
+        {
+            var offset = direction.ToLowerInvariant() switch
+            {
+                "previous" => -1,
+                "next" => 1,
+                _ => 0
+            };
+            if (offset == 0) return Results.BadRequest();
+            await store.MoveActiveCursorAsync(offset, cancellationToken);
+            return Results.Redirect("/review");
+        }).DisableAntiforgery();
 
         endpoints.MapPost("/review/{groupId}/propose", async (string groupId, HttpRequest request, ReviewStore store, CancellationToken cancellationToken) =>
         {
@@ -68,9 +81,11 @@ public static class ReviewUiEndpoints
 
     private static string RenderReview(DuplicateGroup group, ReviewProgress progress)
     {
+        var actionable = group.Status is ReviewStatus.Pending or ReviewStatus.Failed;
         var html = new StringBuilder($"""
-            <main><header><h1>Group {progress.Reviewed + progress.Skipped + 1} / {progress.Total}</h1>
+            <main><header><h1>Group {progress.CurrentPosition + 1} / {progress.Total}</h1>
             <div class="progress">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
+            <p class="status">Status: {group.Status}</p>
             <form id="decision" method="post" action="/review/{E(group.Id)}/propose"><div class="assets">
             """);
         for (var index = 0; index < group.Assets.Count; index++)
@@ -78,6 +93,14 @@ public static class ReviewUiEndpoints
             var asset = group.Assets[index];
             var keep = index == 0 ? "checked" : string.Empty;
             var trash = index == 0 ? string.Empty : "checked";
+            var controls = actionable
+                ? $"""
+                  <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} data-keep> Keep</label>
+                  <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} data-trash> Trash</label>
+                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" data-stack> Stack</label>
+                  <input type="hidden" name="{(index == 0 ? "keepAssetIds" : "trashAssetIds")}" value="{E(asset.Id)}" data-decision>
+                  """
+                : "<p>Decision already recorded. This group is read-only.</p>";
             html.Append($"""
                 <article class="asset" data-index="{index}">
                   <button type="button" class="preview-button" aria-label="Full-screen preview"><img src="/api/assets/{E(asset.Id)}/preview" alt="{E(asset.FileName)}"></button>
@@ -85,16 +108,17 @@ public static class ReviewUiEndpoints
                   <dl><dt>Path</dt><dd>{E(asset.OriginalPath ?? "Unknown")}</dd><dt>Captured</dt><dd>{asset.CaptureDate:yyyy-MM-dd}</dd>
                   <dt>Size</dt><dd>{FormatBytes(asset.FileSize)}</dd><dt>Dimensions</dt><dd>{asset.Width?.ToString() ?? "?"}×{asset.Height?.ToString() ?? "?"}</dd>
                   <dt>Camera</dt><dd>{E(asset.Camera ?? "Unknown")}</dd><dt>Signals</dt><dd>{Signals(asset)}</dd></dl>
-                  <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} data-keep> Keep</label>
-                  <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} data-trash> Trash</label>
-                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" data-stack> Stack</label>
-                  <input type="hidden" name="{(index == 0 ? "keepAssetIds" : "trashAssetIds")}" value="{E(asset.Id)}" data-decision>
+                  {controls}
                 </article>
                 """);
         }
+        var decisionAction = actionable ? "<div class=\"actions\"><button type=\"submit\">Review proposed changes</button></div>" : string.Empty;
+        var skipAction = actionable ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>" : string.Empty;
         html.Append($"""
-            </div><div class="actions"><button type="submit">Review proposed changes</button></div></form>
-            <form id="skip" method="post" action="/review/{E(group.Id)}/skip"><button type="submit">Skip</button></form>
+            </div>{decisionAction}</form>
+            <nav><form id="previous" method="post" action="/review/navigation/previous"><button type="submit">Previous</button></form>
+            <form id="next" method="post" action="/review/navigation/next"><button type="submit">Next</button></form></nav>
+            {skipAction}
             <details><summary>Keyboard shortcuts</summary><p>1–9 prefer asset · Space Keep/Trash · S stack · X skip · Enter review · Left/Right navigate · F full screen</p></details>
             </main><script>{KeyboardScript}</script>
             """);
@@ -144,12 +168,12 @@ public static class ReviewUiEndpoints
         cards.forEach((c,i)=>c.addEventListener('click',()=>choose(i)));
         document.querySelectorAll('[data-keep],[data-trash]').forEach(r=>r.addEventListener('change',e=>{const c=e.target.closest('.asset'), h=c.querySelector('[data-decision]'); h.name=e.target.value==='keep'?'keepAssetIds':'trashAssetIds'; if(e.target.value==='trash')c.querySelector('[data-stack]').checked=false;}));
         document.addEventListener('keydown',e=>{if(typing(e)||!cards.length)return; const c=cards[focused];
-          if(e.key>='1'&&e.key<='9'&&+e.key<=cards.length){choose(+e.key-1);cards[focused].querySelector('[data-keep]').click();}
-          else if(e.key===' '){e.preventDefault();(c.querySelector('[data-keep]').checked?c.querySelector('[data-trash]'):c.querySelector('[data-keep]')).click();}
-          else if(e.key.toLowerCase()==='s'&&c.querySelector('[data-keep]').checked)c.querySelector('[data-stack]').click();
-          else if(e.key.toLowerCase()==='x')document.querySelector('#skip').requestSubmit();
-          else if(e.key==='Enter')document.querySelector('#decision').requestSubmit();
-          else if(e.key==='ArrowLeft')choose(Math.max(0,focused-1)); else if(e.key==='ArrowRight')choose(Math.min(cards.length-1,focused+1));
+          if(e.key>='1'&&e.key<='9'&&+e.key<=cards.length&&cards[+e.key-1].querySelector('[data-keep]')){choose(+e.key-1);cards[focused].querySelector('[data-keep]').click();}
+          else if(e.key===' '&&c.querySelector('[data-keep]')){e.preventDefault();(c.querySelector('[data-keep]').checked?c.querySelector('[data-trash]'):c.querySelector('[data-keep]')).click();}
+          else if(e.key.toLowerCase()==='s'&&c.querySelector('[data-keep]')?.checked)c.querySelector('[data-stack]').click();
+          else if(e.key.toLowerCase()==='x'&&document.querySelector('#skip'))document.querySelector('#skip').requestSubmit();
+          else if(e.key==='Enter'&&document.querySelector('#decision button[type=submit]'))document.querySelector('#decision').requestSubmit();
+          else if(e.key==='ArrowLeft')document.querySelector('#previous').requestSubmit(); else if(e.key==='ArrowRight')document.querySelector('#next').requestSubmit();
           else if(e.key.toLowerCase()==='f')c.querySelector('img').requestFullscreen();}); choose(0);
         """;
 

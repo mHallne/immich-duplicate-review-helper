@@ -93,6 +93,18 @@ public sealed class ImmichClientTests
         Assert.Single(handler.Requests);
     }
 
+    [Fact]
+    public async Task Retrieves_album_names_for_an_asset()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "[{\"id\":\"album-2\",\"albumName\":\"Trips\"},{\"id\":\"album-1\",\"albumName\":\"Family\"}]");
+
+        var names = await Create(handler).GetAlbumNamesAsync("asset-1");
+
+        Assert.Equal(["Family", "Trips"], names);
+        Assert.Equal("https://immich.example/api/albums?assetId=asset-1", handler.LastRequest!.RequestUri!.ToString());
+        Assert.Equal("secret", handler.LastRequest.Headers.GetValues("x-api-key").Single());
+    }
+
     private static ImmichClient Create(StubHandler handler) =>
         new(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
 

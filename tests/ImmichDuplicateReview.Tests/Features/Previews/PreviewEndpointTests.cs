@@ -92,6 +92,7 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
 
     private sealed class FakeImmichClient : IImmichClient
     {
+        public Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>([]);
         public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DuplicateGroup>>([]);
         public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromResult(new PreviewContent([1, 2, 3], "image/jpeg"));
         public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -102,6 +103,7 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
 
     private sealed class UnavailableImmichClient : IImmichClient
     {
+        public Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<IReadOnlyList<string>>(new ImmichApiException("unavailable"));
         public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => Task.FromException<IReadOnlyList<DuplicateGroup>>(new ImmichApiException("upstream included super-secret"));
         public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<PreviewContent>(new ImmichApiException("upstream included super-secret"));
         public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));

@@ -15,6 +15,7 @@ Directory.CreateDirectory(dataPath);
 builder.Services.AddSingleton(new ImmichOptions(new Uri(immichUrl), apiKey));
 builder.Services.AddSingleton(BatchOptions.FromConfiguration(builder.Configuration["DEFAULT_BATCH_SIZE"]));
 builder.Services.AddHttpClient<IImmichClient, ImmichClient>();
+builder.Services.AddTransient<AlbumMetadataEnricher>();
 builder.Services.AddSingleton(new ReviewStore(Path.Combine(dataPath, "reviews.db")));
 
 var app = builder.Build();

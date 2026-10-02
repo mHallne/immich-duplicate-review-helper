@@ -31,6 +31,15 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         return new(bytes, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
     }
 
+    public async Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, $"albums?assetId={Uri.EscapeDataString(assetId)}");
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var albums = await response.Content.ReadFromJsonAsync<AlbumDto[]>(JsonOptions, cancellationToken) ?? [];
+        return albums.Select(album => album.AlbumName).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     public async Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
     {
         var payload = new ResolveRequest([new(groupId, keepAssetIds, trashAssetIds)]);
@@ -134,4 +143,5 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     private sealed record StackCreateRequest(IReadOnlyList<string> AssetIds);
     private sealed record StackDto(string Id, string PrimaryAssetId, AssetReferenceDto[] Assets);
     private sealed record AssetReferenceDto(string Id);
+    private sealed record AlbumDto(string Id, string AlbumName);
 }

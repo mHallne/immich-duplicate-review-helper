@@ -95,6 +95,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
 
     private sealed class FakeImmichClient : IImmichClient
     {
+        public Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>([]);
         public int ResolveCalls { get; private set; }
         public Exception? Failure { get; init; }
         public Exception? TrashSafetyFailure { get; init; }

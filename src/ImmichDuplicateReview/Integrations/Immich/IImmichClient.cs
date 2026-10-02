@@ -7,6 +7,7 @@ public sealed record PreviewContent(byte[] Bytes, string ContentType);
 public interface IImmichClient
 {
     Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default);
     Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default);
     Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default);
     Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default);

@@ -12,6 +12,7 @@ public static class BatchEndpoints
         endpoints.MapPost("/api/batches", async (
             CreateBatchRequest request,
             IImmichClient immich,
+            AlbumMetadataEnricher albumEnricher,
             ReviewStore store,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
@@ -23,6 +24,8 @@ public static class BatchEndpoints
             var batch = CreateBatch.Handle(pending, request.BatchSize, sortMode);
             var session = await store.CreateOrResumeSessionAsync(request.BatchSize, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
             var activeGroups = await store.LoadActiveBatchAsync(cancellationToken);
+            activeGroups = await albumEnricher.EnrichAsync(activeGroups, cancellationToken);
+            await store.UpsertGroupsAsync(activeGroups, cancellationToken);
             var progress = await store.GetActiveProgressAsync(cancellationToken);
             loggerFactory.CreateLogger("Batch").LogInformation("Batch {SessionId} active with {GroupCount} groups and size {BatchSize}", session.Id, activeGroups.Count, session.BatchSize);
             return Results.Ok(new { session, groups = activeGroups, progress });

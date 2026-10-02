@@ -19,7 +19,7 @@ public static class ReviewUiEndpoints
             </form></main>
             """), "text/html"));
 
-        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, ReviewStore store, BatchOptions options, CancellationToken cancellationToken) =>
+        endpoints.MapPost("/review/start", async (HttpRequest request, IImmichClient immich, AlbumMetadataEnricher albumEnricher, ReviewStore store, BatchOptions options, CancellationToken cancellationToken) =>
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var size = int.TryParse(form["batchSize"], out var parsed) ? parsed : options.DefaultSize;
@@ -28,13 +28,17 @@ public static class ReviewUiEndpoints
             await store.UpsertGroupsAsync(groups, cancellationToken);
             var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size, sortMode);
             await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
+            var activeGroups = await albumEnricher.EnrichAsync(await store.LoadActiveBatchAsync(cancellationToken), cancellationToken);
+            await store.UpsertGroupsAsync(activeGroups, cancellationToken);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
 
-        endpoints.MapGet("/review", async (ReviewStore store, CancellationToken cancellationToken) =>
+        endpoints.MapGet("/review", async (ReviewStore store, AlbumMetadataEnricher albumEnricher, CancellationToken cancellationToken) =>
         {
             var group = await store.LoadCurrentActiveGroupAsync(cancellationToken);
             if (group is null) return Results.Content(Layout("<main><h1>Batch complete</h1><p>No pending groups remain.</p></main>"), "text/html");
+            group = (await albumEnricher.EnrichAsync([group], cancellationToken))[0];
+            await store.UpsertGroupsAsync([group], cancellationToken);
             var progress = await store.GetActiveProgressAsync(cancellationToken);
             return Results.Content(RenderReview(group, progress), "text/html");
         });
@@ -107,7 +111,8 @@ public static class ReviewUiEndpoints
                   <h2>{index + 1}. {E(asset.FileName)}</h2>
                   <dl><dt>Path</dt><dd>{E(asset.OriginalPath ?? "Unknown")}</dd><dt>Captured</dt><dd>{asset.CaptureDate:yyyy-MM-dd}</dd>
                   <dt>Size</dt><dd>{FormatBytes(asset.FileSize)}</dd><dt>Dimensions</dt><dd>{asset.Width?.ToString() ?? "?"}×{asset.Height?.ToString() ?? "?"}</dd>
-                  <dt>Camera</dt><dd>{E(asset.Camera ?? "Unknown")}</dd><dt>Signals</dt><dd>{Signals(asset)}</dd></dl>
+                  <dt>Camera</dt><dd>{E(asset.Camera ?? "Unknown")}</dd><dt>Albums</dt><dd>{AlbumNames(asset)}</dd>
+                  <dt>Signals</dt><dd>{Signals(asset)}</dd></dl>
                   {controls}
                 </article>
                 """);
@@ -148,6 +153,9 @@ public static class ReviewUiEndpoints
     }.Where(x => x is not null));
 
     private static string FormatBytes(long? bytes) => bytes is null ? "Unknown" : $"{bytes.Value / 1024d / 1024d:0.##} MB";
+    private static string AlbumNames(DuplicateAsset asset) => asset.AlbumNames is null
+        ? "Unavailable"
+        : asset.AlbumNames.Count == 0 ? "None" : E(string.Join(", ", asset.AlbumNames));
     private static string E(string value) => WebUtility.HtmlEncode(value);
     private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 50, 100, 250, 500 }.Select(size =>
         $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));

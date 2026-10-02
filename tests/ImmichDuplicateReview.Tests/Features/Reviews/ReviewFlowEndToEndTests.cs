@@ -27,6 +27,7 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
 
             var reviewPage = await client.GetStringAsync("/review");
             Assert.Contains("/api/assets/g1-a/preview", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("<dt>Albums</dt><dd>None</dd>", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
 
@@ -93,6 +94,7 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
 
     private sealed class ScenarioImmichClient : IImmichClient
     {
+        public Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>([]);
         public int ResolveCalls { get; private set; }
         public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DuplicateGroup>>(
         [

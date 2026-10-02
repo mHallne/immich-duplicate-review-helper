@@ -28,6 +28,9 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             var reviewPage = await client.GetStringAsync("/review");
             Assert.Contains("/api/assets/g1-a/preview", reviewPage, StringComparison.Ordinal);
             Assert.Contains("<dt>Albums</dt><dd>None</dd>", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("<dt>Format</dt><dd>JPEG</dd>", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("Largest file", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("Highest resolution", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
 
@@ -132,6 +135,8 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
         }
 
         private static DuplicateGroup Group(string id, int day, int count) => new(id,
-            Enumerable.Range(0, count).Select(i => new DuplicateAsset($"{id}-{(char)('a' + i)}", $"{id}-{i}.jpg", DateTimeOffset.UnixEpoch.AddDays(day))).ToArray());
+            Enumerable.Range(0, count).Select(i => new DuplicateAsset(
+                $"{id}-{(char)('a' + i)}", $"{id}-{i}.jpg", DateTimeOffset.UnixEpoch.AddDays(day),
+                FileSize: 1_000 - i, Width: 4_000 - i, Height: 3_000 - i, Format: "JPEG", HasExif: true)).ToArray());
     }
 }

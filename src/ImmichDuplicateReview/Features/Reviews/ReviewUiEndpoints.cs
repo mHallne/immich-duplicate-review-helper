@@ -88,6 +88,8 @@ public static class ReviewUiEndpoints
     private static string RenderReview(DuplicateGroup group, ReviewProgress progress, ReviewAttempt? attempt)
     {
         var actionable = group.Status is ReviewStatus.Pending or ReviewStatus.Failed;
+        var largestFile = group.Assets.Where(asset => asset.FileSize is not null).MaxBy(asset => asset.FileSize)?.Id;
+        var highestResolution = group.Assets.Where(asset => asset.PixelCount is not null).MaxBy(asset => asset.PixelCount)?.Id;
         var saved = attempt?.DecisionJson is { } json ? JsonSerializer.Deserialize<SavedDecision>(json, JsonOptions) : null;
         var failureNotice = group.Status == ReviewStatus.Failed
             ? "<aside role=\"alert\"><strong>Previous attempt failed.</strong> Your saved decision is restored. Review it and confirm again when Immich is available.</aside>"
@@ -120,8 +122,8 @@ public static class ReviewUiEndpoints
                   <h2>{index + 1}. {E(asset.FileName)}</h2>
                   <dl><dt>Path</dt><dd>{E(asset.OriginalPath ?? "Unknown")}</dd><dt>Captured</dt><dd>{asset.CaptureDate:yyyy-MM-dd}</dd>
                   <dt>Size</dt><dd>{FormatBytes(asset.FileSize)}</dd><dt>Dimensions</dt><dd>{asset.Width?.ToString() ?? "?"}×{asset.Height?.ToString() ?? "?"}</dd>
-                  <dt>Camera</dt><dd>{E(asset.Camera ?? "Unknown")}</dd><dt>Albums</dt><dd>{AlbumNames(asset)}</dd>
-                  <dt>Signals</dt><dd>{Signals(asset)}</dd></dl>
+                  <dt>Format</dt><dd>{E(asset.Format ?? "Unknown")}</dd><dt>Camera</dt><dd>{E(asset.Camera ?? "Unknown")}</dd>
+                  <dt>Albums</dt><dd>{AlbumNames(asset)}</dd><dt>Signals</dt><dd>{Signals(asset, asset.Id == largestFile, asset.Id == highestResolution)}</dd></dl>
                   {controls}
                 </article>
                 """);
@@ -156,8 +158,9 @@ public static class ReviewUiEndpoints
             """);
     }
 
-    private static string Signals(DuplicateAsset asset) => string.Join(" · ", new[]
+    private static string Signals(DuplicateAsset asset, bool largestFile, bool highestResolution) => string.Join(" · ", new[]
     {
+        largestFile ? "Largest file" : null, highestResolution ? "Highest resolution" : null,
         asset.HasExif ? "EXIF" : null, asset.HasGps ? "GPS" : null, asset.IsFavorite ? "Favorite" : null,
         asset.AlbumNames?.Count > 0 ? "In albums" : null, asset.Rating is not null ? $"Rating {asset.Rating}" : null
     }.Where(x => x is not null));

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using ImmichDuplicateReview.Features.Batches;
 using ImmichDuplicateReview.Features.Reviews;
 using ImmichDuplicateReview.Integrations.Immich;
@@ -122,6 +124,7 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("HELPER_PASSWORD", "a-long-test-password");
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IImmichClient>();
@@ -133,10 +136,21 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
                 }
             });
         }
+
+        protected override void ConfigureClient(HttpClient client)
+        {
+            base.ConfigureClient(client);
+            var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("review:a-long-test-password"));
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+        }
     }
 
     private sealed class ConfiguredFactory(string batchSize) : WebApplicationFactory<Program>
     {
-        protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseSetting("DEFAULT_BATCH_SIZE", batchSize);
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("DEFAULT_BATCH_SIZE", batchSize);
+        }
     }
 }

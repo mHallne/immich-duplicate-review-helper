@@ -28,7 +28,7 @@ set -a; source .env; set +a
 dotnet run --project src/ImmichDuplicateReview
 ```
 
-Open the URL printed by ASP.NET Core. Run tests with:
+Replace `HELPER_PASSWORD` with a unique password of at least 12 characters before starting. Open the URL printed by ASP.NET Core and sign in with the configured `HELPER_USERNAME` (default `review`) and password. Run tests with:
 
 ```bash
 dotnet restore
@@ -59,7 +59,7 @@ chmod 600 .env
 nano .env
 ```
 
-Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `compose.yaml`.
+Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, choose a unique `HELPER_PASSWORD` of at least 12 characters, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `compose.yaml`.
 
 Build and start the native ARM64 image:
 
@@ -89,7 +89,7 @@ curl -s http://localhost:8080/health; echo
 curl -s http://localhost:8080/ready; echo
 ```
 
-The UI is available at `http://raspberrypi.local:8080`. It has no built-in user authentication, so expose it only on a trusted LAN or place it behind an authenticated reverse proxy. To update later, back up the SQLite volume first, then run:
+The UI is available at `http://raspberrypi.local:8080` and is protected with HTTP Basic authentication. Basic authentication does not encrypt traffic, so keep the helper on a trusted network or put it behind HTTPS when accessing it outside an encrypted tailnet. The unauthenticated `/health` and `/ready` endpoints expose only service status for container health checks. To update later, back up the SQLite volume first, then run:
 
 ```bash
 git pull

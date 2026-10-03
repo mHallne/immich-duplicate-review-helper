@@ -120,6 +120,7 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseEnvironment("Testing");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["DATA_PATH"] = dataPath }));
             builder.ConfigureServices(services =>
             {

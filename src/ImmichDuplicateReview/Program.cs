@@ -2,6 +2,7 @@ using ImmichDuplicateReview.Features.Health;
 using ImmichDuplicateReview.Features.Previews;
 using ImmichDuplicateReview.Features.Reviews;
 using ImmichDuplicateReview.Features.Batches;
+using ImmichDuplicateReview.Features.Security;
 using ImmichDuplicateReview.Integrations.Immich;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Data.Sqlite;
@@ -12,6 +13,7 @@ var apiKey = builder.Configuration["IMMICH_API_KEY"] ?? string.Empty;
 var dataPath = builder.Configuration["DATA_PATH"] ?? Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(dataPath);
 
+builder.Services.AddSingleton(AccessProtectionOptions.FromConfiguration(builder.Configuration, builder.Environment));
 builder.Services.AddSingleton(new ImmichOptions(new Uri(immichUrl), apiKey));
 builder.Services.AddSingleton(BatchOptions.FromConfiguration(builder.Configuration["DEFAULT_BATCH_SIZE"]));
 builder.Services.AddHttpClient<IImmichClient, ImmichClient>();
@@ -29,6 +31,7 @@ catch (SqliteException exception)
     app.Logger.LogError("SQLite initialization failed with code {SqliteErrorCode}; readiness will remain unavailable", exception.SqliteErrorCode);
 }
 
+app.UseMiddleware<AccessProtectionMiddleware>();
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
     var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;

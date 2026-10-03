@@ -136,4 +136,4 @@ Every destructive proposal is displayed before execution. Trash decisions use Im
 
 Operational endpoints are `GET /health` and `GET /ready`; readiness requires both SQLite and authenticated Immich access.
 
-`DEFAULT_BATCH_SIZE` controls the initially selected batch size and must be `50`, `100`, `250`, or `500`. Dependency failures return a retryable error without exposing upstream details or credentials. The process remains live when SQLite initialization fails so orchestration can distinguish `/health` from `/ready`.
+`DEFAULT_BATCH_SIZE` controls the initially selected batch size and must be `10`, `20`, `50`, or `100`. Dependency failures return a retryable error without exposing upstream details or credentials. The process remains live when SQLite initialization fails so orchestration can distinguish `/health` from `/ready`.

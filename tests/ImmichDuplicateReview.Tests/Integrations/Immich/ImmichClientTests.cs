@@ -38,11 +38,34 @@ public sealed class ImmichClientTests
     {
         var handler = new StubHandler(HttpStatusCode.OK, "image-bytes", "image/jpeg");
 
-        var preview = await Create(handler).GetPreviewAsync("asset-1");
+        await using var preview = await Create(handler).GetPreviewAsync("asset-1");
 
         Assert.Equal("image/jpeg", preview.ContentType);
-        Assert.Equal("image-bytes", Encoding.UTF8.GetString(preview.Bytes));
+        using var reader = new StreamReader(preview.Stream, Encoding.UTF8, leaveOpen: true);
+        Assert.Equal("image-bytes", await reader.ReadToEndAsync());
         Assert.Equal("https://immich.example/api/assets/asset-1/thumbnail?size=preview", handler.LastRequest!.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task Preview_stream_is_not_read_until_the_caller_consumes_it()
+    {
+        var source = new TrackingStream(Encoding.UTF8.GetBytes("image-bytes"));
+        var handler = new SequenceHandler(_ => new(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(source, 1)
+            {
+                Headers = { ContentType = new("image/jpeg") }
+            }
+        });
+        var client = new ImmichClient(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
+
+        var preview = await client.GetPreviewAsync("asset-1");
+
+        Assert.Equal(0, source.BytesRead);
+        Assert.NotEqual(-1, preview.Stream.ReadByte());
+        Assert.Equal(1, source.BytesRead);
+        await preview.DisposeAsync();
+        Assert.True(source.IsDisposed);
     }
 
     [Fact]
@@ -152,6 +175,39 @@ public sealed class ImmichClientTests
             var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             Requests.Add((request.Method, request.RequestUri!.ToString(), body));
             return responses[_index++](request);
+        }
+    }
+
+    private sealed class TrackingStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public int BytesRead { get; private set; }
+        public bool IsDisposed { get; private set; }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = base.Read(buffer, offset, count);
+            BytesRead += read;
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = base.Read(buffer);
+            BytesRead += read;
+            return read;
+        }
+
+        public override int ReadByte()
+        {
+            var value = base.ReadByte();
+            if (value >= 0) BytesRead++;
+            return value;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
         }
     }
 }

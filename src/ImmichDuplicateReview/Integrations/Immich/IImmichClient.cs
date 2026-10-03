@@ -2,7 +2,20 @@ using ImmichDuplicateReview.Features.Batches;
 
 namespace ImmichDuplicateReview.Integrations.Immich;
 
-public sealed record PreviewContent(byte[] Bytes, string ContentType);
+public sealed class PreviewContent(Stream stream, string contentType, long? contentLength = null, IDisposable? owner = null) : IAsyncDisposable
+{
+    public PreviewContent(byte[] bytes, string contentType) : this(new MemoryStream(bytes, writable: false), contentType, bytes.LongLength) { }
+
+    public Stream Stream { get; } = stream;
+    public string ContentType { get; } = contentType;
+    public long? ContentLength { get; } = contentLength;
+
+    public async ValueTask DisposeAsync()
+    {
+        await Stream.DisposeAsync();
+        owner?.Dispose();
+    }
+}
 
 public interface IImmichClient
 {

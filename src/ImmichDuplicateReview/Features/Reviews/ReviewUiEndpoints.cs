@@ -99,7 +99,7 @@ public static class ReviewUiEndpoints
             : string.Empty;
         var html = new StringBuilder($"""
             <main><header><h1>Group {progress.CurrentPosition + 1} / {progress.Total}</h1>
-            <div class="progress">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
+            <div class="progress" role="status" aria-live="polite">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
             <p class="status">Status: {group.Status}</p>{failureNotice}
             <form id="decision" method="post" action="/review/{E(group.Id)}/propose"><div class="assets">
             """);
@@ -121,7 +121,7 @@ public static class ReviewUiEndpoints
                 : "<p>Decision already recorded. This group is read-only.</p>";
             html.Append($"""
                 <article class="asset" data-index="{index}">
-                  <button type="button" class="preview-button" aria-label="Full-screen preview"><img src="/api/assets/{E(asset.Id)}/preview" alt="{E(asset.FileName)}"></button>
+                  <button type="button" class="preview-button" aria-label="Full-screen preview of {E(asset.FileName)}"><img src="/api/assets/{E(asset.Id)}/preview" alt="{E(asset.FileName)}"></button>
                   <h2>{index + 1}. {E(asset.FileName)}</h2>
                   <dl><dt>Path</dt><dd>{E(asset.OriginalPath ?? "Unknown")}</dd><dt>Captured</dt><dd>{asset.CaptureDate:yyyy-MM-dd}</dd>
                   <dt>Size</dt><dd>{FormatBytes(asset.FileSize)}</dd><dt>Dimensions</dt><dd>{asset.Width?.ToString() ?? "?"}×{asset.Height?.ToString() ?? "?"}</dd>

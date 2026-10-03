@@ -1,6 +1,6 @@
 # Immich API Integration
 
-Validated against the current official Immich server source/OpenAPI behavior in September 2026:
+Validated against the current official Immich server source/OpenAPI behavior in October 2026:
 
 | Capability | Request | Notes |
 | --- | --- | --- |

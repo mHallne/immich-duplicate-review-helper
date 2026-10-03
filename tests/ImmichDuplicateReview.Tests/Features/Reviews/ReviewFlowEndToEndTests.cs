@@ -32,6 +32,8 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.Contains("<dt>Format</dt><dd>JPEG</dd>", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Largest file", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Highest resolution", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("role=\"status\" aria-live=\"polite\"", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("aria-label=\"Full-screen preview of g1-0.jpg\"", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
             Assert.Contains(first.Logs, entry => entry.Contains("Group g1 loaded", StringComparison.Ordinal));

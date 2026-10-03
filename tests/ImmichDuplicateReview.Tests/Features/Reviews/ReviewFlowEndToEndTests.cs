@@ -42,7 +42,11 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.True(toolbarPosition >= 0 && toolbarPosition < assetsPosition);
             Assert.Contains("class=\"toolbar-left\"", reviewPage, StringComparison.Ordinal);
             Assert.Contains("class=\"toolbar-right\"", reviewPage, StringComparison.Ordinal);
-            Assert.Contains("form=\"decision\" type=\"submit\">Review proposed changes", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("form=\"decision\" type=\"submit\" disabled", reviewPage, StringComparison.Ordinal);
+            Assert.DoesNotContain("checked data-keep", reviewPage, StringComparison.Ordinal);
+            Assert.DoesNotContain("checked data-trash", reviewPage, StringComparison.Ordinal);
+            Assert.DoesNotContain("type=\"hidden\" name=\"keepAssetIds\"", reviewPage, StringComparison.Ordinal);
+            Assert.DoesNotContain("type=\"hidden\" name=\"trashAssetIds\"", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
             Assert.Contains(first.Logs, entry => entry.Contains("Group g1 loaded", StringComparison.Ordinal));
 

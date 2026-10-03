@@ -124,6 +124,40 @@ public sealed class ImmichClientTests
         Assert.Equal("secret", handler.LastRequest.Headers.GetValues("x-api-key").Single());
     }
 
+    [Fact]
+    public async Task Readiness_checks_identity_duplicates_and_safe_trash_configuration()
+    {
+        var handler = new SequenceHandler(
+            _ => new(HttpStatusCode.OK) { Content = Json("{}") },
+            _ => new(HttpStatusCode.OK) { Content = Json("[]") },
+            _ => new(HttpStatusCode.OK) { Content = Json("{\"trash\":{\"enabled\":true}}") });
+        var client = new ImmichClient(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
+
+        var ready = await client.IsReadyAsync();
+
+        Assert.True(ready);
+        Assert.Equal(
+        [
+            "https://immich.example/api/users/me",
+            "https://immich.example/api/duplicates",
+            "https://immich.example/api/config"
+        ], handler.Requests.Select(request => request.Uri));
+    }
+
+    [Fact]
+    public async Task Readiness_fails_when_a_required_capability_is_forbidden()
+    {
+        var handler = new SequenceHandler(
+            _ => new(HttpStatusCode.OK) { Content = Json("{}") },
+            _ => new(HttpStatusCode.OK) { Content = Json("[]") },
+            _ => new(HttpStatusCode.Forbidden) { Content = Json("{\"message\":\"Missing required permission: userConfig.read\"}") });
+        var client = new ImmichClient(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
+
+        var ready = await client.IsReadyAsync();
+
+        Assert.False(ready);
+    }
+
     private static ImmichClient Create(StubHandler handler) =>
         new(new HttpClient(handler), new ImmichOptions(new Uri("https://immich.example"), "secret"));
 

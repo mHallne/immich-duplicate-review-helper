@@ -55,10 +55,10 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
 
     public async Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default)
     {
-        using var request = CreateRequest(HttpMethod.Get, "system-config");
+        using var request = CreateRequest(HttpMethod.Get, "config");
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        var config = await response.Content.ReadFromJsonAsync<SystemConfigDto>(JsonOptions, cancellationToken);
+        var config = await response.Content.ReadFromJsonAsync<UserConfigDto>(JsonOptions, cancellationToken);
         if (config?.Trash.Enabled != true)
             throw new ImmichApiException("Immich Trash is disabled; refusing an operation that could permanently delete assets.");
     }
@@ -138,7 +138,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     private sealed record ResolveRequest(IReadOnlyList<ResolveGroup> Groups);
     private sealed record ResolveGroup(string DuplicateId, IReadOnlyCollection<string> KeepAssetIds, IReadOnlyCollection<string> TrashAssetIds);
     private sealed record ResolveResult(string Id, bool Success, string? Error);
-    private sealed record SystemConfigDto(TrashConfigDto Trash);
+    private sealed record UserConfigDto(TrashConfigDto Trash);
     private sealed record TrashConfigDto(bool Enabled);
     private sealed record StackCreateRequest(IReadOnlyList<string> AssetIds);
     private sealed record StackDto(string Id, string PrimaryAssetId, AssetReferenceDto[] Assets);

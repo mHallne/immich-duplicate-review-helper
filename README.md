@@ -68,7 +68,19 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-The runtime uses Microsoft's smaller .NET 10 chiseled image. The default Compose configuration does not set a memory limit because some Raspberry Pi kernels lack memory-cgroup support. On a host that supports it, apply the optional 384 MB limit with `docker compose -f compose.yaml -f compose.memory-limit.yml up -d --build`; raise `mem_limit` in the overlay to `512m` if large batches or concurrent previews cause restarts.
+The runtime uses Microsoft's smaller .NET 10 chiseled image.
+
+### Optional memory limit
+
+The default `compose.yaml` deliberately has no memory limit because some Raspberry Pi kernels do not expose the required memory-cgroup capability. A limit does not reduce normal memory consumption; it only constrains the container when usage reaches the configured maximum.
+
+On a host with memory-cgroup support, merge the optional overlay to apply a 384 MB limit:
+
+```bash
+docker compose -f compose.yaml -f compose.memory-limit.yml up -d --build
+```
+
+Use the same pair of `-f` arguments for subsequent Compose commands that should include the limit. If Docker reports that memory-limit capabilities are unavailable, use only `docker compose up -d`. If the helper is killed while processing large batches or concurrent previews, raise `mem_limit` in `compose.memory-limit.yml` to `512m`. Inspect current usage with `docker stats "$(docker compose ps -q duplicate-review-helper)"`.
 
 Verify both liveness and dependency readiness (the `echo` keeps responses readable):
 

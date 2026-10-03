@@ -166,6 +166,16 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
     }
 
     public async Task<IReadOnlyList<DuplicateGroup>> LoadPendingAsync(CancellationToken cancellationToken = default)
+        => await LoadPendingCoreAsync(null, cancellationToken);
+
+    public async Task<IReadOnlyList<DuplicateGroup>> LoadPendingAsync(
+        IReadOnlyCollection<string> currentImmichGroupIds,
+        CancellationToken cancellationToken = default)
+        => await LoadPendingCoreAsync(currentImmichGroupIds.ToHashSet(StringComparer.Ordinal), cancellationToken);
+
+    private async Task<IReadOnlyList<DuplicateGroup>> LoadPendingCoreAsync(
+        HashSet<string>? currentImmichGroupIds,
+        CancellationToken cancellationToken)
     {
         var groups = new List<DuplicateGroup>();
         await using var connection = await OpenAsync(cancellationToken);
@@ -179,9 +189,11 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var groupId = reader.GetString(0);
+            if (currentImmichGroupIds is not null && !currentImmichGroupIds.Contains(groupId)) continue;
             var assets = JsonSerializer.Deserialize<DuplicateAsset[]>(reader.GetString(1))
                 ?? throw new InvalidDataException("Stored asset metadata is invalid.");
-            groups.Add(new DuplicateGroup(reader.GetString(0), assets));
+            groups.Add(new DuplicateGroup(groupId, assets));
         }
         return groups;
     }

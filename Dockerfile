@@ -10,6 +10,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080 DATA_PATH=/data
+RUN mkdir -p /data && chown -R $APP_UID:$APP_UID /data
 VOLUME /data
 EXPOSE 8080
 USER $APP_UID

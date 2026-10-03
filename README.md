@@ -49,6 +49,13 @@ If the Immich network has a different name, change `networks.immich.name`.
 
 Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`; the Compose example uses a named volume. For a consistent backup, stop the helper and copy `reviews.db` (or back up the entire volume). Restoring that file resumes the same bounded batch and position.
 
+If `/ready` reports `"sqlite":false` and logs SQLite error code 14 after upgrading an older deployment, repair the existing volume once with:
+
+```bash
+docker compose -f docker-compose.example.yml run --rm --user root --entrypoint sh duplicate-review-helper -c 'chown -R "$APP_UID:$APP_UID" /data'
+docker compose -f docker-compose.example.yml restart duplicate-review-helper
+```
+
 ## Safety
 
 Every destructive proposal is displayed before execution. Trash decisions use Immich's duplicate resolver and are refused unless the helper confirms Immich Trash is enabled. The helper never requests permanent deletion, empties Trash, modifies source files, or chooses assets automatically. Failed API operations are recorded and never marked reviewed; the saved choices are restored for review and explicit confirmation before retrying.

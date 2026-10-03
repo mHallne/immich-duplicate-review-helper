@@ -52,6 +52,20 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
     }
 
     [Fact]
+    public async Task Missing_Immich_permission_returns_actionable_safe_problem()
+    {
+        await using var factory = new DependencyFactory(new PermissionDeniedImmichClient());
+
+        var response = await factory.CreateClient().GetAsync("/api/assets/asset-1/preview");
+        var problem = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Contains("Immich API permission is missing", problem, StringComparison.Ordinal);
+        Assert.Contains("asset.view", problem, StringComparison.Ordinal);
+        Assert.DoesNotContain("sensitive upstream body", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Sqlite_failure_keeps_liveness_up_but_readiness_down()
     {
         var invalidDatabasePath = Path.Combine(Path.GetTempPath(), $"sqlite-directory-{Guid.NewGuid():N}");
@@ -108,15 +122,24 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class UnavailableImmichClient : IImmichClient
+    private class UnavailableImmichClient : IImmichClient
     {
         public Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<IReadOnlyList<string>>(new ImmichApiException("unavailable"));
         public Task<IReadOnlyList<DuplicateGroup>> GetDuplicateGroupsAsync(CancellationToken cancellationToken = default) => Task.FromException<IReadOnlyList<DuplicateGroup>>(new ImmichApiException("upstream included super-secret"));
-        public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<PreviewContent>(new ImmichApiException("upstream included super-secret"));
+        public virtual Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => Task.FromException<PreviewContent>(new ImmichApiException("upstream included super-secret"));
         public Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
         public Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default) => Task.FromException(new ImmichApiException("unavailable"));
+    }
+
+    private sealed class PermissionDeniedImmichClient : UnavailableImmichClient
+    {
+        public override Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) =>
+            Task.FromException<PreviewContent>(ImmichApiException.FromResponse(
+                "load an asset preview",
+                HttpStatusCode.Forbidden,
+                "asset.view"));
     }
 
     private sealed class DependencyFactory(IImmichClient immich, ReviewStore? store = null) : WebApplicationFactory<Program>

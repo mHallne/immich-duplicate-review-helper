@@ -122,6 +122,31 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
         Assert.Equal(["g1", "g2", "g3"], activeIds);
     }
 
+    [Fact]
+    public async Task Ambiguous_resolve_page_requires_manual_verification_instead_of_reconfirmation()
+    {
+        var immich = new ScenarioImmichClient();
+        await using var factory = new Factory(_dataPath, immich);
+        var client = factory.CreateClient();
+        (await client.PostAsJsonAsync("/api/batches", new { batchSize = 100 })).EnsureSuccessStatusCode();
+        var store = factory.Services.GetRequiredService<ReviewStore>();
+        await store.MarkFailedAsync("g1", "{\"keep\":[\"g1-a\"],\"trash\":[\"g1-b\"],\"stack\":[]}", "AmbiguousResolveException");
+
+        var page = await client.GetStringAsync("/review");
+
+        Assert.Contains("verify this group directly in Immich", page, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Review saved decision", page, StringComparison.Ordinal);
+        Assert.Contains("I verified the result in Immich", page, StringComparison.Ordinal);
+        Assert.Contains("/review/g1/acknowledge-ambiguous", page, StringComparison.Ordinal);
+
+        var acknowledged = await client.PostAsync("/review/g1/acknowledge-ambiguous", null);
+
+        acknowledged.EnsureSuccessStatusCode();
+        Assert.Equal(ReviewStatus.Skipped, await store.GetStatusAsync("g1"));
+        var attempt = await store.LoadReviewAttemptAsync("g1");
+        Assert.Equal("Ambiguous resolve outcome manually verified in Immich", attempt?.FailureType);
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Directory.Exists(_dataPath)) Directory.Delete(_dataPath, true);

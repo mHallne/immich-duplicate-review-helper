@@ -50,8 +50,7 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient,
                     var groups = await immichClient.GetDuplicateGroupsAsync(cancellationToken);
                     if (groups.All(candidate => candidate.Id != group.Id))
                     {
-                        logger.LogInformation("Resolve outcome reconciled for group {GroupId}; group is no longer returned by Immich", group.Id);
-                        await store.MarkResolveCompletedAsync(group.Id, cancellationToken);
+                        throw new AmbiguousResolveException(group.Id);
                     }
                 }
 

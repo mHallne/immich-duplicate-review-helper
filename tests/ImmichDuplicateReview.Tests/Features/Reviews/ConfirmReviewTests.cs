@@ -110,7 +110,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Lost_resolve_response_is_reconciled_without_repeating_destructive_call()
+    public async Task Missing_group_after_lost_response_requires_manual_verification_without_repeating_resolve()
     {
         var group = Group();
         await using var store = await StoreWithAsync(group);
@@ -119,11 +119,14 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => workflow.HandleAsync(group, decision));
-        await workflow.HandleAsync(group, decision);
+        var exception = await Assert.ThrowsAsync<AmbiguousResolveException>(() => workflow.HandleAsync(group, decision));
 
         Assert.Equal(1, immich.ResolveCalls);
         Assert.Equal(1, immich.DuplicateLookupCalls);
-        Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
+        Assert.Contains("manually verify", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ReviewStatus.Failed, await store.GetStatusAsync(group.Id));
+        Assert.False(await store.IsResolveCompletedAsync(group.Id));
+        Assert.Equal("AmbiguousResolveException", (await store.LoadReviewAttemptAsync(group.Id))?.FailureType);
     }
 
     [Fact]

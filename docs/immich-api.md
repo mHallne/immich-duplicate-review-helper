@@ -19,7 +19,7 @@ Authentication uses the `x-api-key` request header. Immich-specific request/resp
 
 - Immich returns duplicate groups as one collection; ordered batch membership is persisted locally after synchronization.
 - Album membership is not present in the duplicate response, so active-batch assets require bounded per-asset album lookups. Results are cached in SQLite metadata.
-- Resolve actions use persisted started/completed checkpoints. After a lost response, the helper reloads duplicates and only repeats resolve when the group is still present. A retry after stack failure does not repeat a successful duplicate resolution, and a matching existing stack is detected before creation.
+- Resolve actions use persisted started/completed checkpoints. After a lost response, the helper reloads duplicates and only repeats resolve when the group is still present. If it has disappeared, the outcome is marked ambiguous for manual verification rather than assumed successful. A retry after stack failure does not repeat a successful duplicate resolution, and a matching existing stack is detected before creation.
 - If system configuration cannot be read, trash actions fail closed. This avoids Immich behavior that can permanently delete when its Trash feature is disabled.
 
 No database fallback is used for missing API capabilities.

@@ -97,10 +97,22 @@ public static class ReviewUiEndpoints
         var failureNotice = group.Status == ReviewStatus.Failed
             ? "<aside role=\"alert\"><strong>Previous attempt failed.</strong> Your saved decision is restored. Review it and confirm again when Immich is available.</aside>"
             : string.Empty;
+        var decisionLabel = group.Status == ReviewStatus.Failed ? "Review saved decision" : "Review proposed changes";
+        var decisionAction = actionable
+            ? $"<button form=\"decision\" type=\"submit\">{decisionLabel}</button>"
+            : string.Empty;
+        var skipAction = actionable
+            ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>"
+            : string.Empty;
         var html = new StringBuilder($"""
             <main><header><h1>Group {progress.CurrentPosition + 1} / {progress.Total}</h1>
             <div class="progress" role="status" aria-live="polite">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
             <p class="status">Status: {group.Status}</p>{failureNotice}
+            <details><summary>Keyboard shortcuts</summary><p>1–9 prefer asset · Space Keep/Trash · S stack · X skip · Enter review · Left/Right navigate · F full screen</p></details>
+            <div class="review-toolbar"><div class="toolbar-left">
+            <form id="previous" method="post" action="/review/navigation/previous"><button type="submit">Previous</button></form>
+            <form id="next" method="post" action="/review/navigation/next"><button type="submit">Next</button></form>
+            {skipAction}</div><div class="toolbar-right">{decisionAction}</div></div>
             <form id="decision" method="post" action="/review/{E(group.Id)}/propose"><div class="assets">
             """);
         for (var index = 0; index < group.Assets.Count; index++)
@@ -131,15 +143,8 @@ public static class ReviewUiEndpoints
                 </article>
                 """);
         }
-        var decisionLabel = group.Status == ReviewStatus.Failed ? "Review saved decision" : "Review proposed changes";
-        var decisionAction = actionable ? $"<div class=\"actions\"><button type=\"submit\">{decisionLabel}</button></div>" : string.Empty;
-        var skipAction = actionable ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>" : string.Empty;
         html.Append($"""
-            </div>{decisionAction}</form>
-            <nav><form id="previous" method="post" action="/review/navigation/previous"><button type="submit">Previous</button></form>
-            <form id="next" method="post" action="/review/navigation/next"><button type="submit">Next</button></form></nav>
-            {skipAction}
-            <details><summary>Keyboard shortcuts</summary><p>1–9 prefer asset · Space Keep/Trash · S stack · X skip · Enter review · Left/Right navigate · F full screen</p></details>
+            </div></form>
             </main><script>{KeyboardScript}</script>
             """);
         return Layout(html.ToString());
@@ -198,7 +203,7 @@ public static class ReviewUiEndpoints
           else if(e.key===' '&&c.querySelector('[data-keep]')){e.preventDefault();(c.querySelector('[data-keep]').checked?c.querySelector('[data-trash]'):c.querySelector('[data-keep]')).click();}
           else if(e.key.toLowerCase()==='s'&&c.querySelector('[data-keep]')?.checked)c.querySelector('[data-stack]').click();
           else if(e.key.toLowerCase()==='x'&&document.querySelector('#skip'))document.querySelector('#skip').requestSubmit();
-          else if(e.key==='Enter'&&document.querySelector('#decision button[type=submit]'))document.querySelector('#decision').requestSubmit();
+          else if(e.key==='Enter'&&document.querySelector('[form="decision"][type="submit"]'))document.querySelector('#decision').requestSubmit(document.querySelector('[form="decision"][type="submit"]'));
           else if(e.key==='ArrowLeft')document.querySelector('#previous').requestSubmit(); else if(e.key==='ArrowRight')document.querySelector('#next').requestSubmit();
           else if(e.key.toLowerCase()==='f')c.querySelector('img').requestFullscreen();}); choose(0);
         """;
@@ -206,7 +211,7 @@ public static class ReviewUiEndpoints
     private static string Layout(string body) => $$"""
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
         <title>Immich Duplicate Review Helper</title><style>
-        :root{color-scheme:dark;background:#111;color:#eee;font:15px system-ui}body{margin:0}main{max-width:1500px;margin:auto;padding:1rem}header,.actions{display:flex;justify-content:space-between;align-items:center}.assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.8rem}.asset{background:#202124;padding:.7rem;border:2px solid transparent}.asset.focused{border-color:#7c9cff}.asset img{width:100%;height:42vh;object-fit:contain;background:#090909}.preview-button{border:0;padding:0;width:100%;background:none}.asset h2{font-size:1rem;overflow-wrap:anywhere}dl{display:grid;grid-template-columns:auto 1fr;gap:.2rem .6rem}dt{color:#aaa}dd{margin:0;overflow-wrap:anywhere}button,select{padding:.65rem;margin:.25rem;font:inherit}.danger{background:#a22;color:white}label{display:inline-block;margin:.3rem}.progress{font-size:1.1rem}
+        :root{color-scheme:dark;background:#111;color:#eee;font:15px system-ui}body{margin:0}main{max-width:1500px;margin:auto;padding:1rem}header,.review-toolbar,.toolbar-left{display:flex;justify-content:space-between;align-items:center}.review-toolbar{margin:.5rem 0}.toolbar-left{justify-content:flex-start}.toolbar-left form{margin:0}.assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.8rem}.asset{background:#202124;padding:.7rem;border:2px solid transparent}.asset.focused{border-color:#7c9cff}.asset img{width:100%;height:42vh;object-fit:contain;background:#090909}.preview-button{border:0;padding:0;width:100%;background:none}.asset h2{font-size:1rem;overflow-wrap:anywhere}dl{display:grid;grid-template-columns:auto 1fr;gap:.2rem .6rem}dt{color:#aaa}dd{margin:0;overflow-wrap:anywhere}button,select{padding:.65rem;margin:.25rem;font:inherit}.danger{background:#a22;color:white}label{display:inline-block;margin:.3rem}.progress{font-size:1.1rem}
         </style></head><body>{{body}}</body></html>
         """;
 }

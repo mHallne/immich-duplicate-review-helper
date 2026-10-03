@@ -35,6 +35,14 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.Contains("role=\"status\" aria-live=\"polite\"", reviewPage, StringComparison.Ordinal);
             Assert.Contains("aria-label=\"Full-screen preview of g1-0.jpg\"", reviewPage, StringComparison.Ordinal);
             Assert.Contains("Keyboard shortcuts", reviewPage, StringComparison.Ordinal);
+            var shortcutsPosition = reviewPage.IndexOf("<details", StringComparison.Ordinal);
+            var toolbarPosition = reviewPage.IndexOf("class=\"review-toolbar\"", StringComparison.Ordinal);
+            var assetsPosition = reviewPage.IndexOf("class=\"assets\"", StringComparison.Ordinal);
+            Assert.True(shortcutsPosition >= 0 && shortcutsPosition < assetsPosition);
+            Assert.True(toolbarPosition >= 0 && toolbarPosition < assetsPosition);
+            Assert.Contains("class=\"toolbar-left\"", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("class=\"toolbar-right\"", reviewPage, StringComparison.Ordinal);
+            Assert.Contains("form=\"decision\" type=\"submit\">Review proposed changes", reviewPage, StringComparison.Ordinal);
             Assert.Contains("INPUT", reviewPage, StringComparison.Ordinal);
             Assert.Contains(first.Logs, entry => entry.Contains("Group g1 loaded", StringComparison.Ordinal));
 

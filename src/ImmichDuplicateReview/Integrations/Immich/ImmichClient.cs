@@ -167,14 +167,22 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     {
         try
         {
-            using var request = CreateRequest(HttpMethod.Get, "users/me");
-            using var response = await httpClient.SendAsync(request, cancellationToken);
-            return response.IsSuccessStatusCode;
+            if (!await CanAccessAsync("users/me", cancellationToken)) return false;
+            if (!await CanAccessAsync("duplicates", cancellationToken)) return false;
+            await EnsureTrashEnabledAsync(cancellationToken);
+            return true;
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or ImmichApiException or JsonException)
         {
             return false;
         }
+    }
+
+    private async Task<bool> CanAccessAsync(string path, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get, path);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return response.IsSuccessStatusCode;
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)

@@ -4,6 +4,28 @@ namespace ImmichDuplicateReview.Tests.Features.Batches;
 
 public sealed class CreateBatchTests
 {
+    [Theory]
+    [InlineData(10)]
+    [InlineData(20)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public void Accepts_supported_batch_sizes(int batchSize)
+    {
+        var groups = Enumerable.Range(0, 100).Select(i => Group($"g{i:000}", DateTimeOffset.UnixEpoch.AddDays(i)));
+
+        var batch = CreateBatch.Handle(groups, batchSize);
+
+        Assert.Equal(batchSize, batch.Groups.Count);
+    }
+
+    [Theory]
+    [InlineData(250)]
+    [InlineData(500)]
+    public void Rejects_retired_batch_sizes(int batchSize)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateBatch.Handle([], batchSize));
+    }
+
     [Fact]
     public void Selects_100_oldest_pending_groups_deterministically()
     {

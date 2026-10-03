@@ -2,17 +2,8 @@ name: Build and test
 
 on:
   push:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE*'
+    branches: [main]
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE*'
 
 permissions:
   contents: read

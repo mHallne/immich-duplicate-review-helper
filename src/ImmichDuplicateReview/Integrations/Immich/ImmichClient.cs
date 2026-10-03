@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,7 +8,75 @@ namespace ImmichDuplicateReview.Integrations.Immich;
 
 public sealed record ImmichOptions(Uri BaseUrl, string ApiKey);
 
-public sealed class ImmichApiException(string message, Exception? innerException = null) : Exception(message, innerException);
+public enum ImmichFailureKind { Unavailable, AuthenticationFailed, PermissionDenied, EndpointNotFound, TrashDisabled, OperationRejected }
+
+public class ImmichApiException : Exception
+{
+    public ImmichApiException(string message, Exception? innerException = null)
+        : this(message, ImmichFailureKind.Unavailable, "Immich is unavailable", "The helper could not complete the request against Immich. Retry when Immich is available.", null, null, innerException) { }
+
+    private ImmichApiException(
+        string message,
+        ImmichFailureKind kind,
+        string userTitle,
+        string userDetail,
+        HttpStatusCode? statusCode,
+        string? requiredPermission,
+        Exception? innerException = null) : base(message, innerException)
+    {
+        Kind = kind;
+        UserTitle = userTitle;
+        UserDetail = userDetail;
+        StatusCode = statusCode;
+        RequiredPermission = requiredPermission;
+    }
+
+    public ImmichFailureKind Kind { get; }
+    public string UserTitle { get; }
+    public string UserDetail { get; }
+    public HttpStatusCode? StatusCode { get; }
+    public string? RequiredPermission { get; }
+
+    public static ImmichApiException FromResponse(string operation, HttpStatusCode statusCode, string requiredPermission)
+    {
+        var (kind, title, detail) = statusCode switch
+        {
+            HttpStatusCode.Unauthorized => (
+                ImmichFailureKind.AuthenticationFailed,
+                "Immich API key was rejected",
+                "Replace IMMICH_API_KEY with a valid key and restart the helper."),
+            HttpStatusCode.Forbidden => (
+                ImmichFailureKind.PermissionDenied,
+                "Immich API permission is missing",
+                $"Grant {requiredPermission} to the helper's Immich API key, then retry."),
+            HttpStatusCode.NotFound => (
+                ImmichFailureKind.EndpointNotFound,
+                "Immich API endpoint was not found",
+                "Check that IMMICH_URL points to a compatible Immich server and that the helper supports its version."),
+            _ => (
+                ImmichFailureKind.Unavailable,
+                "Immich is unavailable",
+                "The helper could not complete the request against Immich. Retry when Immich is available.")
+        };
+        return new($"Immich returned HTTP {(int)statusCode} while attempting to {operation}.", kind, title, detail, statusCode, requiredPermission);
+    }
+
+    public static ImmichApiException TrashDisabled() => new(
+        "Immich Trash is disabled; refusing an operation that could permanently delete assets.",
+        ImmichFailureKind.TrashDisabled,
+        "Immich Trash is disabled",
+        "Enable Trash in Immich before confirming any review that would trash assets.",
+        null,
+        null);
+
+    public static ImmichApiException OperationRejected(string operation) => new(
+        $"Immich rejected the {operation} operation.",
+        ImmichFailureKind.OperationRejected,
+        "Immich rejected the operation",
+        $"No local review state was lost. Check the group in Immich, then retry {operation}.",
+        null,
+        null);
+}
 
 public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) : IImmichClient
 {
@@ -17,7 +86,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     {
         using var request = CreateRequest(HttpMethod.Get, "duplicates");
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        await EnsureSuccessAsync(response, "load duplicate groups", "duplicate.read");
         var dtos = await response.Content.ReadFromJsonAsync<DuplicateGroupDto[]>(JsonOptions, cancellationToken) ?? [];
         return dtos.Select(Map).ToArray();
     }
@@ -28,7 +97,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         try
         {
-            await EnsureSuccessAsync(response, cancellationToken);
+            await EnsureSuccessAsync(response, "load an asset preview", "asset.view");
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             return new PreviewContent(
                 stream,
@@ -47,7 +116,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     {
         using var request = CreateRequest(HttpMethod.Get, $"albums?assetId={Uri.EscapeDataString(assetId)}");
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        await EnsureSuccessAsync(response, "load album membership", "album.read");
         var albums = await response.Content.ReadFromJsonAsync<AlbumDto[]>(JsonOptions, cancellationToken) ?? [];
         return albums.Select(album => album.AlbumName).Order(StringComparer.OrdinalIgnoreCase).ToArray();
     }
@@ -58,21 +127,21 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         using var request = CreateRequest(HttpMethod.Post, "duplicates/resolve");
         request.Content = JsonContent.Create(payload, options: JsonOptions);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        await EnsureSuccessAsync(response, "resolve duplicate assets", "duplicate.delete and asset.delete");
         var results = await response.Content.ReadFromJsonAsync<ResolveResult[]>(JsonOptions, cancellationToken) ?? [];
         var result = results.SingleOrDefault(x => x.Id == groupId);
         if (result is null || !result.Success)
-            throw new ImmichApiException($"Immich failed to resolve duplicate group '{groupId}': {result?.Error ?? "missing result"}.");
+            throw ImmichApiException.OperationRejected("duplicate resolution");
     }
 
     public async Task EnsureTrashEnabledAsync(CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Get, "config");
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        await EnsureSuccessAsync(response, "read Trash configuration", "userConfig.read");
         var config = await response.Content.ReadFromJsonAsync<UserConfigDto>(JsonOptions, cancellationToken);
         if (config?.Trash.Enabled != true)
-            throw new ImmichApiException("Immich Trash is disabled; refusing an operation that could permanently delete assets.");
+            throw ImmichApiException.TrashDisabled();
     }
 
     public async Task EnsureStackAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default)
@@ -82,7 +151,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         using (var search = CreateRequest(HttpMethod.Get, $"stacks?primaryAssetId={Uri.EscapeDataString(primaryAssetId)}"))
         using (var response = await httpClient.SendAsync(search, cancellationToken))
         {
-            await EnsureSuccessAsync(response, cancellationToken);
+            await EnsureSuccessAsync(response, "find an existing stack", "stack.read");
             var stacks = await response.Content.ReadFromJsonAsync<StackDto[]>(JsonOptions, cancellationToken) ?? [];
             var desired = assetIds.ToHashSet(StringComparer.Ordinal);
             if (stacks.Any(stack => desired.IsSubsetOf(stack.Assets.Select(asset => asset.Id).ToHashSet(StringComparer.Ordinal)))) return;
@@ -91,7 +160,7 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         using var create = CreateRequest(HttpMethod.Post, "stacks");
         create.Content = JsonContent.Create(new StackCreateRequest(assetIds), options: JsonOptions);
         using var createResponse = await httpClient.SendAsync(create, cancellationToken);
-        await EnsureSuccessAsync(createResponse, cancellationToken);
+        await EnsureSuccessAsync(createResponse, "create a stack", "stack.create");
     }
 
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
@@ -116,11 +185,10 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
         return request;
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static Task EnsureSuccessAsync(HttpResponseMessage response, string operation, string requiredPermission)
     {
-        if (response.IsSuccessStatusCode) return;
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        throw new ImmichApiException($"Immich returned {(int)response.StatusCode}: {body}");
+        if (response.IsSuccessStatusCode) return Task.CompletedTask;
+        throw ImmichApiException.FromResponse(operation, response.StatusCode, requiredPermission);
     }
 
     private static DuplicateGroup Map(DuplicateGroupDto group) => new(group.DuplicateId,

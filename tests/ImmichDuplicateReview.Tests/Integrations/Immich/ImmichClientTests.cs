@@ -106,6 +106,19 @@ public sealed class ImmichClientTests
     }
 
     [Fact]
+    public async Task Forbidden_response_reports_required_permission_without_exposing_upstream_body()
+    {
+        var handler = new StubHandler(HttpStatusCode.Forbidden, "{\"message\":\"secret upstream detail\"}");
+
+        var exception = await Assert.ThrowsAsync<ImmichApiException>(() => Create(handler).GetDuplicateGroupsAsync());
+
+        Assert.Equal(ImmichFailureKind.PermissionDenied, exception.Kind);
+        Assert.Equal("duplicate.read", exception.RequiredPermission);
+        Assert.Contains("duplicate.read", exception.UserDetail, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret upstream detail", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Ensure_stack_searches_by_primary_then_creates_with_ordered_assets()
     {
         var handler = new SequenceHandler(

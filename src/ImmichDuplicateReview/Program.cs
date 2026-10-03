@@ -36,6 +36,7 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
     var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
     var dependencyFailure = exception is ImmichApiException or HttpRequestException;
+    var immichFailure = exception as ImmichApiException;
     var status = dependencyFailure ? StatusCodes.Status502BadGateway : StatusCodes.Status500InternalServerError;
     app.Logger.LogError(
         "Request failed at {RequestPath} with {FailureType}",
@@ -46,16 +47,17 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     {
         await Results.Problem(
             statusCode: status,
-            title: dependencyFailure ? "Immich is unavailable" : "The request failed",
-            detail: dependencyFailure ? "The helper could not complete the request against Immich. Retry when Immich is available." : "An unexpected error occurred.")
+            title: immichFailure?.UserTitle ?? (dependencyFailure ? "Immich is unavailable" : "The request failed"),
+            detail: immichFailure?.UserDetail ?? (dependencyFailure ? "The helper could not complete the request against Immich. Retry when Immich is available." : "An unexpected error occurred."))
             .ExecuteAsync(context);
         return;
     }
 
     context.Response.StatusCode = status;
     context.Response.ContentType = "text/html; charset=utf-8";
-    var title = dependencyFailure ? "Immich is unavailable" : "The request failed";
-    await context.Response.WriteAsync($"<!doctype html><html><body><main><h1>{title}</h1><p>Your local review state was preserved. <a href=\"/review\">Retry the review</a>.</p></main></body></html>");
+    var title = immichFailure?.UserTitle ?? (dependencyFailure ? "Immich is unavailable" : "The request failed");
+    var detail = immichFailure?.UserDetail ?? (dependencyFailure ? "The helper could not complete the request against Immich." : "An unexpected error occurred.");
+    await context.Response.WriteAsync($"<!doctype html><html><body><main><h1>{System.Net.WebUtility.HtmlEncode(title)}</h1><p>{System.Net.WebUtility.HtmlEncode(detail)}</p><p>Your local review state was preserved. <a href=\"/review\">Retry the review</a>.</p></main></body></html>");
 }));
 
 app.MapPreviewEndpoints();

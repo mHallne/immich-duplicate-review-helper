@@ -16,16 +16,18 @@ public sealed class ContainerConfigurationTests
     }
 
     [Fact]
-    public void Deployment_uses_chiseled_runtime_and_bounded_memory()
+    public void Deployment_uses_chiseled_runtime_and_keeps_memory_limit_optional()
     {
         var repositoryRoot = FindRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "Dockerfile"));
         var compose = File.ReadAllText(Path.Combine(repositoryRoot, "compose.yaml"));
+        var memoryCompose = File.ReadAllText(Path.Combine(repositoryRoot, "compose.memory-limit.yml"));
         var readme = File.ReadAllText(Path.Combine(repositoryRoot, "README.md"));
 
         Assert.Contains("mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled", dockerfile, StringComparison.Ordinal);
         Assert.DoesNotContain("RUN mkdir -p /data", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("mem_limit: 384m", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("mem_limit:", compose, StringComparison.Ordinal);
+        Assert.Contains("mem_limit: 384m", memoryCompose, StringComparison.Ordinal);
         Assert.Contains("repair-data:", compose, StringComparison.Ordinal);
         Assert.DoesNotContain("--entrypoint sh", readme, StringComparison.Ordinal);
     }

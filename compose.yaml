@@ -2,7 +2,6 @@ services:
   duplicate-review-helper:
     build: .
     restart: unless-stopped
-    mem_limit: 384m
     env_file: .env
     ports:
       - "8080:8080"

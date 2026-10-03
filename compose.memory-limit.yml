@@ -1,0 +1,3 @@
+services:
+  duplicate-review-helper:
+    mem_limit: 384m

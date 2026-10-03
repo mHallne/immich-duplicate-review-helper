@@ -40,7 +40,7 @@ dotnet test
 Set `IMMICH_URL` to Immich's Docker service URL, normally `http://immich-server:2283`, then run:
 
 ```bash
-docker compose -f docker-compose.example.yml up --build -d
+docker compose up --build -d
 ```
 
 If the Immich network has a different name, change `networks.immich.name`.
@@ -59,16 +59,16 @@ chmod 600 .env
 nano .env
 ```
 
-Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `docker-compose.example.yml`.
+Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `compose.yaml`.
 
 Build and start the native ARM64 image:
 
 ```bash
-docker compose -f docker-compose.example.yml up -d --build
-docker compose -f docker-compose.example.yml logs -f
+docker compose up -d --build
+docker compose logs -f
 ```
 
-The runtime uses Microsoft's smaller .NET 10 chiseled image and the Compose example limits the helper to 384 MB of memory. If large batches or concurrent previews cause out-of-memory restarts, raise `mem_limit` in `docker-compose.example.yml` to `512m`.
+The runtime uses Microsoft's smaller .NET 10 chiseled image and the Compose configuration limits the helper to 384 MB of memory. If large batches or concurrent previews cause out-of-memory restarts, raise `mem_limit` in `compose.yaml` to `512m`.
 
 Verify both liveness and dependency readiness (the `echo` keeps responses readable):
 
@@ -81,14 +81,14 @@ The UI is available at `http://raspberrypi.local:8080`. It has no built-in user 
 
 ```bash
 git pull
-docker compose -f docker-compose.example.yml up -d --build
+docker compose up -d --build
 ```
 
 Do not run `docker compose down -v`: it deletes the named volume containing review progress. If readiness reports `"sqlite":false` and the logs show SQLite error code 14, repair ownership without deleting the volume:
 
 ```bash
-docker compose -f docker-compose.example.yml --profile maintenance run --rm repair-data
-docker compose -f docker-compose.example.yml up -d --build --force-recreate
+docker compose --profile maintenance run --rm repair-data
+docker compose up -d --build --force-recreate
 ```
 
 ## Persistence and backup
@@ -98,8 +98,8 @@ Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`
 If `/ready` reports `"sqlite":false` and logs SQLite error code 14 after upgrading an older deployment, repair the existing volume once with:
 
 ```bash
-docker compose -f docker-compose.example.yml --profile maintenance run --rm repair-data
-docker compose -f docker-compose.example.yml restart duplicate-review-helper
+docker compose --profile maintenance run --rm repair-data
+docker compose restart duplicate-review-helper
 ```
 
 ## Safety

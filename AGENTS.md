@@ -10,7 +10,7 @@ This is one .NET 10 ASP.NET Core application organized by vertical slice. Produc
 - `dotnet build ImmichDuplicateReview.slnx` compiles with nullable references and warnings as errors.
 - `dotnet test` runs unit, SQLite integration, HTTP, and restart-flow tests.
 - `dotnet run --project src/ImmichDuplicateReview` starts the local server.
-- `docker compose -f docker-compose.example.yml up --build` runs the containerized helper.
+- `docker compose up --build` runs the containerized helper.
 
 ## TDD and Coding Conventions
 

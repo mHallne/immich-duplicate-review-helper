@@ -20,7 +20,7 @@ public sealed class ContainerConfigurationTests
     {
         var repositoryRoot = FindRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "Dockerfile"));
-        var compose = File.ReadAllText(Path.Combine(repositoryRoot, "docker-compose.example.yml"));
+        var compose = File.ReadAllText(Path.Combine(repositoryRoot, "compose.yaml"));
         var readme = File.ReadAllText(Path.Combine(repositoryRoot, "README.md"));
 
         Assert.Contains("mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled", dockerfile, StringComparison.Ordinal);

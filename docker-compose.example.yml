@@ -2,6 +2,7 @@ services:
   duplicate-review-helper:
     build: .
     restart: unless-stopped
+    mem_limit: 384m
     env_file: .env
     ports:
       - "8080:8080"
@@ -9,6 +10,14 @@ services:
       - duplicate-review-data:/data
     networks:
       - immich
+
+  repair-data:
+    image: alpine:3.22
+    profiles: ["maintenance"]
+    user: root
+    command: ["chown", "-R", "1654:1654", "/data"]
+    volumes:
+      - duplicate-review-data:/data
 
 volumes:
   duplicate-review-data:

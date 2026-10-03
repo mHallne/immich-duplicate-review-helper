@@ -68,6 +68,8 @@ docker compose -f docker-compose.example.yml up -d --build
 docker compose -f docker-compose.example.yml logs -f
 ```
 
+The runtime uses Microsoft's smaller .NET 10 chiseled image and the Compose example limits the helper to 384 MB of memory. If large batches or concurrent previews cause out-of-memory restarts, raise `mem_limit` in `docker-compose.example.yml` to `512m`.
+
 Verify both liveness and dependency readiness (the `echo` keeps responses readable):
 
 ```bash
@@ -85,9 +87,7 @@ docker compose -f docker-compose.example.yml up -d --build
 Do not run `docker compose down -v`: it deletes the named volume containing review progress. If readiness reports `"sqlite":false` and the logs show SQLite error code 14, repair ownership without deleting the volume:
 
 ```bash
-docker compose -f docker-compose.example.yml run --rm \
-  --user root --entrypoint sh duplicate-review-helper \
-  -c 'chown -R "$APP_UID:$APP_UID" /data'
+docker compose -f docker-compose.example.yml --profile maintenance run --rm repair-data
 docker compose -f docker-compose.example.yml up -d --build --force-recreate
 ```
 
@@ -98,7 +98,7 @@ Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`
 If `/ready` reports `"sqlite":false` and logs SQLite error code 14 after upgrading an older deployment, repair the existing volume once with:
 
 ```bash
-docker compose -f docker-compose.example.yml run --rm --user root --entrypoint sh duplicate-review-helper -c 'chown -R "$APP_UID:$APP_UID" /data'
+docker compose -f docker-compose.example.yml --profile maintenance run --rm repair-data
 docker compose -f docker-compose.example.yml restart duplicate-review-helper
 ```
 

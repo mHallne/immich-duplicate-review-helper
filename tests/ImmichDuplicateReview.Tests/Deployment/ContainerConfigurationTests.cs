@@ -8,11 +8,26 @@ public sealed class ContainerConfigurationTests
         var repositoryRoot = FindRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "Dockerfile"));
 
-        var ownership = dockerfile.IndexOf("chown -R $APP_UID:$APP_UID /data", StringComparison.Ordinal);
+        var ownership = dockerfile.IndexOf("COPY --from=build --chown=$APP_UID:$APP_UID /container-data /data", StringComparison.Ordinal);
         var nonRootUser = dockerfile.IndexOf("USER $APP_UID", StringComparison.Ordinal);
 
         Assert.True(ownership >= 0, "Dockerfile must grant the application user ownership of /data.");
         Assert.True(ownership < nonRootUser, "Data-directory ownership must be set before switching to the non-root user.");
+    }
+
+    [Fact]
+    public void Deployment_uses_chiseled_runtime_and_bounded_memory()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var dockerfile = File.ReadAllText(Path.Combine(repositoryRoot, "Dockerfile"));
+        var compose = File.ReadAllText(Path.Combine(repositoryRoot, "docker-compose.example.yml"));
+        var readme = File.ReadAllText(Path.Combine(repositoryRoot, "README.md"));
+
+        Assert.Contains("mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled", dockerfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("RUN mkdir -p /data", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("mem_limit: 384m", compose, StringComparison.Ordinal);
+        Assert.Contains("repair-data:", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("--entrypoint sh", readme, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

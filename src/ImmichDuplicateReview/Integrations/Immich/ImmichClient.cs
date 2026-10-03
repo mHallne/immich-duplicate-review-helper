@@ -15,7 +15,7 @@ public class ImmichApiException : Exception
     public ImmichApiException(string message, Exception? innerException = null)
         : this(message, ImmichFailureKind.Unavailable, "Immich is unavailable", "The helper could not complete the request against Immich. Retry when Immich is available.", null, null, innerException) { }
 
-    private ImmichApiException(
+    protected ImmichApiException(
         string message,
         ImmichFailureKind kind,
         string userTitle,
@@ -77,6 +77,14 @@ public class ImmichApiException : Exception
         null,
         null);
 }
+
+public sealed class AmbiguousResolveException(string groupId) : ImmichApiException(
+    $"Immich no longer reports duplicate group '{groupId}' after a lost resolve response. Manually verify the result in Immich; the helper will not repeat the destructive request or mark it reviewed.",
+    ImmichFailureKind.OperationRejected,
+    "Resolve result needs verification",
+    "The earlier request may have succeeded. Verify this duplicate group directly in Immich before acknowledging the result.",
+    null,
+    null);
 
 public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) : IImmichClient
 {

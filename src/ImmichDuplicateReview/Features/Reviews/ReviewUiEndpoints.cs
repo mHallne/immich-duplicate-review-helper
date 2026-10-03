@@ -86,25 +86,42 @@ public static class ReviewUiEndpoints
             loggerFactory.CreateLogger("Review").LogInformation("Review skipped for group {GroupId}", groupId);
             return Results.Redirect("/review");
         }).DisableAntiforgery();
+
+        endpoints.MapPost("/review/{groupId}/acknowledge-ambiguous", async (string groupId, ReviewStore store, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        {
+            var attempt = await store.LoadReviewAttemptAsync(groupId, cancellationToken);
+            if (attempt?.FailureType != nameof(AmbiguousResolveException)) return Results.BadRequest();
+
+            const string note = "Ambiguous resolve outcome manually verified in Immich";
+            await store.SkipAsync(groupId, note, cancellationToken);
+            loggerFactory.CreateLogger("Review").LogWarning("Ambiguous resolve outcome manually verified for group {GroupId}", groupId);
+            return Results.Redirect("/review");
+        }).DisableAntiforgery();
         return endpoints;
     }
 
     private static string RenderReview(DuplicateGroup group, ReviewProgress progress, ReviewAttempt? attempt)
     {
         var actionable = group.Status is ReviewStatus.Pending or ReviewStatus.Failed;
+        var ambiguousResolve = attempt?.FailureType == nameof(AmbiguousResolveException);
+        var decisionEditable = actionable && !ambiguousResolve;
         var largestFile = group.Assets.Where(asset => asset.FileSize is not null).MaxBy(asset => asset.FileSize)?.Id;
         var highestResolution = group.Assets.Where(asset => asset.PixelCount is not null).MaxBy(asset => asset.PixelCount)?.Id;
         var saved = attempt?.DecisionJson is { } json ? JsonSerializer.Deserialize<SavedDecision>(json, JsonOptions) : null;
-        var failureNotice = group.Status == ReviewStatus.Failed
-            ? "<aside role=\"alert\"><strong>Previous attempt failed.</strong> Your saved decision is restored. Review it and confirm again when Immich is available.</aside>"
-            : string.Empty;
+        var failureNotice = ambiguousResolve
+            ? "<aside role=\"alert\"><strong>Resolve result could not be verified.</strong> The request may have succeeded, so the helper will not send it again or mark it reviewed. Please verify this group directly in Immich, then Skip it here to acknowledge the outcome.</aside>"
+            : group.Status == ReviewStatus.Failed
+                ? "<aside role=\"alert\"><strong>Previous attempt failed.</strong> Your saved decision is restored. Review it and confirm again when Immich is available.</aside>"
+                : string.Empty;
         var decisionLabel = group.Status == ReviewStatus.Failed ? "Review saved decision" : "Review proposed changes";
-        var decisionAction = actionable
+        var decisionAction = decisionEditable
             ? $"<button id=\"review-decision\" form=\"decision\" type=\"submit\"{(saved is null ? " disabled" : string.Empty)}>{decisionLabel}</button>"
             : string.Empty;
-        var skipAction = actionable
-            ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>"
-            : string.Empty;
+        var skipAction = ambiguousResolve
+            ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/acknowledge-ambiguous\"><button type=\"submit\">I verified the result in Immich</button></form>"
+            : actionable
+                ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>"
+                : string.Empty;
         var html = new StringBuilder($"""
             <main><header><h1>Group {progress.CurrentPosition + 1} / {progress.Total}</h1>
             <div class="progress" role="status" aria-live="polite">Reviewed: {progress.Reviewed} · Skipped: {progress.Skipped} · Failed: {progress.Failed} · Remaining: {progress.Remaining}</div></header>
@@ -128,7 +145,7 @@ public static class ReviewUiEndpoints
             var decisionInput = isKept is null
                 ? string.Empty
                 : $"<input type=\"hidden\" name=\"{(isKept.Value ? "keepAssetIds" : "trashAssetIds")}\" value=\"{E(asset.Id)}\" data-decision>";
-            var controls = actionable
+            var controls = decisionEditable
                 ? $"""
                   <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} required data-keep> Keep</label>
                   <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} required data-trash> Trash</label>

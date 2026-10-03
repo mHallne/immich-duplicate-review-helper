@@ -27,6 +27,21 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Concurrent_confirmations_issue_one_resolve_operation()
+    {
+        var group = Group();
+        await using var store = await StoreWithAsync(group);
+        var immich = new FakeImmichClient { ResolveDelay = TimeSpan.FromMilliseconds(100), CurrentDuplicateGroups = [group] };
+        var workflow = Workflow(store, immich);
+        var decision = ReviewDecision.Create(group, ["a"], ["b"], []);
+
+        await Task.WhenAll(workflow.HandleAsync(group, decision), workflow.HandleAsync(group, decision));
+
+        Assert.Equal(1, immich.ResolveCalls);
+        Assert.Equal(ReviewStatus.Reviewed, await store.GetStatusAsync(group.Id));
+    }
+
+    [Fact]
     public async Task Failed_Immich_operation_records_failure_and_does_not_complete_review()
     {
         var group = Group();
@@ -154,6 +169,7 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         public Exception? TrashSafetyFailure { get; init; }
         public int StackFailuresRemaining { get; set; }
         public int AmbiguousFailuresRemaining { get; set; }
+        public TimeSpan ResolveDelay { get; init; }
         public int DuplicateLookupCalls { get; private set; }
         public IReadOnlyList<DuplicateGroup> CurrentDuplicateGroups { get; init; } = [];
         public int StackCalls { get; private set; }
@@ -173,12 +189,13 @@ public sealed class ConfirmReviewTests : IAsyncDisposable
         }
         public Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
-        public Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
+        public async Task ResolveAsync(string groupId, IReadOnlyCollection<string> keepAssetIds, IReadOnlyCollection<string> trashAssetIds, CancellationToken cancellationToken = default)
         {
             ResolveCalls++;
             Operations.Add("resolve");
-            if (AmbiguousFailuresRemaining-- > 0) return Task.FromException(new HttpRequestException("response lost"));
-            return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+            if (ResolveDelay > TimeSpan.Zero) await Task.Delay(ResolveDelay, cancellationToken);
+            if (AmbiguousFailuresRemaining-- > 0) throw new HttpRequestException("response lost");
+            if (Failure is not null) throw Failure;
         }
     }
 

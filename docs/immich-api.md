@@ -11,7 +11,7 @@ Validated against the current official Immich server source/OpenAPI behavior in 
 | Find stack | `GET /api/stacks?primaryAssetId={id}` | Makes stack creation idempotent when the desired stack already exists. |
 | Create stack | `POST /api/stacks` | Sends ordered `assetIds`; the first asset becomes primary. |
 | Trash safety | `GET /api/config` | Resolve is refused unless the user-visible `trash.enabled` setting is true. |
-| Readiness auth | `GET /api/users/me` | Verifies reachability and API-key authentication. |
+| Readiness | `GET /api/users/me`, `GET /api/duplicates`, `GET /api/config` | Verifies authentication, duplicate access, configuration access, and safe Trash behavior. |
 
 Authentication uses the `x-api-key` request header. Immich-specific request/response records remain private to `ImmichClient`.
 

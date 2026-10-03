@@ -63,6 +63,12 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
                 PRIMARY KEY (session_id, group_id),
                 UNIQUE (session_id, position)
             );
+            UPDATE review_session
+            SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE completed_at IS NULL
+              AND id <> (SELECT MAX(id) FROM review_session WHERE completed_at IS NULL);
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_review_session_active
+            ON review_session ((1)) WHERE completed_at IS NULL;
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
         await EnsureColumnAsync(connection, "review_action", "resolve_started_at", "TEXT", cancellationToken);
@@ -310,8 +316,10 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
     private async Task<ReviewSession> CreateOrResumeSessionCoreAsync(int batchSize, IReadOnlyList<string> groupIds, string sortMode, CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = connection.BeginTransaction(deferred: false);
         await using (var find = connection.CreateCommand())
         {
+            find.Transaction = transaction;
             find.CommandText = """
                 SELECT id, batch_size, sort_mode, current_position
                 FROM review_session WHERE completed_at IS NULL ORDER BY id DESC LIMIT 1;
@@ -321,12 +329,14 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
             {
                 var existing = new ReviewSession(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3));
                 await reader.DisposeAsync();
-                await PopulateSessionAsync(connection, existing.Id, groupIds, cancellationToken);
+                await PopulateSessionAsync(connection, transaction, existing.Id, groupIds, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return existing;
             }
         }
 
         await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO review_session (created_at, batch_size, sort_mode, current_position)
             VALUES ($created, $size, $sortMode, 0);
@@ -336,7 +346,8 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         insert.Parameters.AddWithValue("$size", batchSize);
         insert.Parameters.AddWithValue("$sortMode", sortMode);
         var id = (long)(await insert.ExecuteScalarAsync(cancellationToken) ?? throw new InvalidOperationException("Session was not created."));
-        await PopulateSessionAsync(connection, id, groupIds, cancellationToken);
+        await PopulateSessionAsync(connection, transaction, id, groupIds, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new(id, batchSize, sortMode, 0);
     }
 
@@ -439,10 +450,11 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         await alter.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task PopulateSessionAsync(SqliteConnection connection, long sessionId, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)
+    private static async Task PopulateSessionAsync(SqliteConnection connection, SqliteTransaction transaction, long sessionId, IReadOnlyList<string> groupIds, CancellationToken cancellationToken)
     {
         if (groupIds.Count == 0) return;
         await using var count = connection.CreateCommand();
+        count.Transaction = transaction;
         count.CommandText = "SELECT COUNT(*) FROM review_session_group WHERE session_id = $sessionId;";
         count.Parameters.AddWithValue("$sessionId", sessionId);
         if (Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) > 0) return;
@@ -450,6 +462,7 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
         for (var position = 0; position < groupIds.Count; position++)
         {
             await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
             insert.CommandText = """
                 INSERT INTO review_session_group (session_id, group_id, position)
                 SELECT $sessionId, id, $position FROM duplicate_group WHERE immich_group_id = $groupId;

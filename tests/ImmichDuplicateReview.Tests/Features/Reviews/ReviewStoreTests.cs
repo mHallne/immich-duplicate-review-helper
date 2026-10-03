@@ -165,6 +165,42 @@ public sealed class ReviewStoreTests : IAsyncDisposable
         Assert.True(await store.IsResolveStartedAsync("g1"));
     }
 
+    [Fact]
+    public async Task Failed_session_population_rolls_back_before_a_valid_session_is_created()
+    {
+        await using var store = new ReviewStore(_databasePath);
+        await store.InitializeAsync();
+        await store.UpsertGroupsAsync([Group("g1"), Group("g2")]);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            store.CreateOrResumeSessionAsync(100, ["g1", "missing"]));
+        await store.CreateOrResumeSessionAsync(100, ["g1", "g2"]);
+
+        Assert.Equal(["g1", "g2"], (await store.LoadActiveBatchAsync()).Select(group => group.Id));
+    }
+
+    [Fact]
+    public async Task Concurrent_session_requests_create_one_complete_active_session()
+    {
+        await using var setup = new ReviewStore(_databasePath);
+        await setup.InitializeAsync();
+        await setup.UpsertGroupsAsync([Group("g1"), Group("g2")]);
+        var stores = Enumerable.Range(0, 8).Select(_ => new ReviewStore(_databasePath)).ToArray();
+
+        try
+        {
+            var sessions = await Task.WhenAll(stores.Select(store =>
+                store.CreateOrResumeSessionAsync(100, ["g1", "g2"])));
+
+            Assert.Single(sessions.Select(session => session.Id).Distinct());
+            Assert.Equal(["g1", "g2"], (await setup.LoadActiveBatchAsync()).Select(group => group.Id));
+        }
+        finally
+        {
+            foreach (var store in stores) await store.DisposeAsync();
+        }
+    }
+
     private static DuplicateGroup Group(string id, int day = 1) => new(id,
     [
         new($"{id}-a", "a.jpg", DateTimeOffset.UnixEpoch.AddDays(day)),

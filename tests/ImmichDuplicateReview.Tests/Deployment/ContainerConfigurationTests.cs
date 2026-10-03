@@ -32,6 +32,21 @@ public sealed class ContainerConfigurationTests
         Assert.DoesNotContain("--entrypoint sh", readme, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Continuous_integration_ignores_documentation_only_changes()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(repositoryRoot, ".github", "workflows", "build-and-test.yml"));
+
+        Assert.Contains("paths-ignore:", workflow, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(workflow, "'**/*.md'"));
+        Assert.Equal(2, CountOccurrences(workflow, "'docs/**'"));
+        Assert.Equal(2, CountOccurrences(workflow, "'.gitignore'"));
+    }
+
+    private static int CountOccurrences(string value, string expected) =>
+        (value.Length - value.Replace(expected, string.Empty, StringComparison.Ordinal).Length) / expected.Length;
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

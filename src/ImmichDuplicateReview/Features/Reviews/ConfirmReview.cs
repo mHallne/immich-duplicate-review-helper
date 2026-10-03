@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using ImmichDuplicateReview.Features.Batches;
 using ImmichDuplicateReview.Integrations.Immich;
@@ -8,8 +9,23 @@ public sealed class ConfirmReview(ReviewStore store, IImmichClient immichClient,
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly EventId RetryEvent = new(1001, "ReviewRetry");
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ConfirmationLocks = new(StringComparer.Ordinal);
 
     public async Task HandleAsync(DuplicateGroup group, ReviewDecision decision, CancellationToken cancellationToken = default)
+    {
+        var confirmationLock = ConfirmationLocks.GetOrAdd(group.Id, static _ => new SemaphoreSlim(1, 1));
+        await confirmationLock.WaitAsync(cancellationToken);
+        try
+        {
+            await HandleCoreAsync(group, decision, cancellationToken);
+        }
+        finally
+        {
+            confirmationLock.Release();
+        }
+    }
+
+    private async Task HandleCoreAsync(DuplicateGroup group, ReviewDecision decision, CancellationToken cancellationToken)
     {
         var status = await store.GetStatusAsync(group.Id, cancellationToken);
         if (status == ReviewStatus.Reviewed) return;

@@ -44,7 +44,7 @@ set -a; source .env; set +a
 dotnet run --project src/ImmichDuplicateReview
 ```
 
-Open the URL printed by ASP.NET Core. Run tests with:
+Replace `HELPER_PASSWORD` with a unique password of at least 12 characters before starting. Open the URL printed by ASP.NET Core and sign in with the configured `HELPER_USERNAME` (default `review`) and password. Run tests with:
 
 ```bash
 dotnet restore
@@ -75,7 +75,7 @@ chmod 600 .env
 nano .env
 ```
 
-Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `compose.yaml`.
+Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, choose a unique `HELPER_PASSWORD` of at least 12 characters, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `compose.yaml`.
 
 Build and start the native ARM64 image:
 
@@ -105,7 +105,7 @@ curl -s http://localhost:8080/health; echo
 curl -s http://localhost:8080/ready; echo
 ```
 
-The UI is available at `http://raspberrypi.local:8080`. It has no built-in user authentication, so expose it only on a trusted LAN or place it behind an authenticated reverse proxy. To update later, back up the SQLite volume first, then run:
+The UI is available at `http://raspberrypi.local:8080` and is protected with HTTP Basic authentication. Basic authentication does not encrypt traffic, so keep the helper on a trusted network or put it behind HTTPS when accessing it outside an encrypted tailnet. The unauthenticated `/health` and `/ready` endpoints expose only service status for container health checks. To update later, back up the SQLite volume first, then run:
 
 ```bash
 git pull
@@ -135,5 +135,7 @@ docker compose restart duplicate-review-helper
 Every destructive proposal is displayed before execution. Trash decisions use Immich's duplicate resolver and are refused unless the helper confirms Immich Trash is enabled. The helper never requests permanent deletion, empties Trash, modifies source files, or chooses assets automatically. Failed API operations are recorded and never marked reviewed; the saved choices are restored for review and explicit confirmation before retrying.
 
 Operational endpoints are `GET /health` and `GET /ready`; readiness requires both SQLite and authenticated Immich access.
+
+All other endpoints require `HELPER_USERNAME` and `HELPER_PASSWORD`. Browser requests that attempt to mutate review state from a different origin are rejected.
 
 `DEFAULT_BATCH_SIZE` controls the initially selected batch size and must be `50`, `100`, `250`, or `500`. Dependency failures return a retryable error without exposing upstream details or credentials. The process remains live when SQLite initialization fails so orchestration can distinguish `/health` from `/ready`.

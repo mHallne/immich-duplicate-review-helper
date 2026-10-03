@@ -19,7 +19,7 @@ public static class BatchEndpoints
         {
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
-            var pending = await store.LoadPendingAsync(cancellationToken);
+            var pending = await store.LoadPendingAsync(groups.Select(group => group.Id).ToArray(), cancellationToken);
             var sortMode = SortModes.Parse(request.SortMode);
             var batch = CreateBatch.Handle(pending, request.BatchSize, sortMode);
             var session = await store.CreateOrResumeSessionAsync(request.BatchSize, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);

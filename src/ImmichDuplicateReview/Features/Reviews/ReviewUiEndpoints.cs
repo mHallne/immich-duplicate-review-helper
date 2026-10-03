@@ -27,7 +27,8 @@ public static class ReviewUiEndpoints
             var sortMode = SortModes.Parse(form["sortMode"]);
             var groups = await immich.GetDuplicateGroupsAsync(cancellationToken);
             await store.UpsertGroupsAsync(groups, cancellationToken);
-            var batch = CreateBatch.Handle(await store.LoadPendingAsync(cancellationToken), size, sortMode);
+            var currentGroupIds = groups.Select(group => group.Id).ToArray();
+            var batch = CreateBatch.Handle(await store.LoadPendingAsync(currentGroupIds, cancellationToken), size, sortMode);
             var session = await store.CreateOrResumeSessionAsync(size, batch.Groups.Select(group => group.Id).ToArray(), sortMode.ToValue(), cancellationToken);
             var activeGroups = await albumEnricher.EnrichAsync(await store.LoadActiveBatchAsync(cancellationToken), cancellationToken);
             await store.UpsertGroupsAsync(activeGroups, cancellationToken);

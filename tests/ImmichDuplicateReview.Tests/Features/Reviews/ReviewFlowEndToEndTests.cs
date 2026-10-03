@@ -108,6 +108,20 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
         Assert.DoesNotContain("ImmichApiException", page, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task New_batch_excludes_pending_groups_no_longer_reported_by_Immich()
+    {
+        await using var factory = new Factory(_dataPath, new ScenarioImmichClient());
+        var store = factory.Services.GetRequiredService<ReviewStore>();
+        await store.UpsertGroupsAsync([Group("stale", 0, 2)]);
+
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/batches", new { batchSize = 100 });
+
+        response.EnsureSuccessStatusCode();
+        var activeIds = (await store.LoadActiveBatchAsync()).Select(group => group.Id);
+        Assert.Equal(["g1", "g2", "g3"], activeIds);
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Directory.Exists(_dataPath)) Directory.Delete(_dataPath, true);
@@ -167,10 +181,10 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             Assert.Equal(["g1-b"], trashAssetIds);
             return Task.CompletedTask;
         }
-
-        private static DuplicateGroup Group(string id, int day, int count) => new(id,
-            Enumerable.Range(0, count).Select(i => new DuplicateAsset(
-                $"{id}-{(char)('a' + i)}", $"{id}-{i}.jpg", DateTimeOffset.UnixEpoch.AddDays(day),
-                FileSize: 1_000 - i, Width: 4_000 - i, Height: 3_000 - i, Format: "JPEG", HasExif: true)).ToArray());
     }
+
+    private static DuplicateGroup Group(string id, int day, int count) => new(id,
+        Enumerable.Range(0, count).Select(i => new DuplicateAsset(
+            $"{id}-{(char)('a' + i)}", $"{id}-{i}.jpg", DateTimeOffset.UnixEpoch.AddDays(day),
+            FileSize: 1_000 - i, Width: 4_000 - i, Height: 3_000 - i, Format: "JPEG", HasExif: true)).ToArray());
 }

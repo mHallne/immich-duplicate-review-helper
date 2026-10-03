@@ -14,23 +14,7 @@ Album membership is fetched only for assets in the active batch, with bounded co
 
 ## Immich API key
 
-In Immich Web, open **Account Settings → API Keys**, create a dedicated key, and grant duplicate read/delete, asset view/update/delete, album read, stack read/create, system configuration read, and user read permissions. The system-configuration permission is required to prove Immich Trash is enabled before resolving a group. Using an unrestricted key works but is not recommended.
-
-Immich restricts system-configuration reads to administrators. The API key must therefore belong to an admin user; granting `systemConfig.read` to a regular user's key is not sufficient. For a dedicated test user, use Immich's supported administration command instead of modifying PostgreSQL directly. If Immich is managed by another Compose project, first locate its running container:
-
-```bash
-docker ps --format 'table {{.Names}}\t{{.Image}}' | grep -i immich
-docker exec -it immich_server immich-admin grant-admin
-```
-
-Replace `immich_server` with the reported container name. Alternatively, from Immich's own Compose directory run `docker compose exec immich-server immich-admin grant-admin`. Enter the test user's email, then sign in as that user and create a new API key with the permissions above. Update `IMMICH_API_KEY` in the helper's `.env` and apply it with:
-
-```bash
-docker compose up -d --force-recreate
-curl -s http://localhost:8080/ready; echo
-```
-
-Promotion grants full Immich administrative access, not only access to the Trash setting. Revoke it when no longer needed with `docker exec -it immich_server immich-admin revoke-admin`; Trash reviews using that user's key will then fail closed again.
+In Immich Web, open **Account Settings → API Keys**, create a dedicated key, and grant duplicate read/delete, asset view/update/delete, album read, stack read/create, user configuration read, and user read permissions. The `userConfig.read` permission is required to prove Immich Trash is enabled before resolving a group. The key can belong to a regular Immich user; administrator access is neither required nor recommended.
 
 The key remains in the backend container. Browser previews go through `/api/assets/{assetId}/preview`; browser JavaScript never receives Immich credentials.
 

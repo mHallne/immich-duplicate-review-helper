@@ -3,7 +3,7 @@ using ImmichDuplicateReview.Integrations.Immich;
 
 namespace ImmichDuplicateReview.Features.Batches;
 
-public sealed record CreateBatchRequest(int BatchSize = 100, string SortMode = "oldest");
+public sealed record CreateBatchRequest(int BatchSize = BatchOptions.DefaultBatchSize, string SortMode = "oldest");
 
 public static class BatchEndpoints
 {

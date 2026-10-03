@@ -5,10 +5,7 @@ namespace ImmichDuplicateReview.Tests.Features.Batches;
 public sealed class CreateBatchTests
 {
     [Theory]
-    [InlineData(10)]
-    [InlineData(20)]
-    [InlineData(50)]
-    [InlineData(100)]
+    [MemberData(nameof(SupportedBatchSizes))]
     public void Accepts_supported_batch_sizes(int batchSize)
     {
         var groups = Enumerable.Range(0, 100).Select(i => Group($"g{i:000}", DateTimeOffset.UnixEpoch.AddDays(i)));
@@ -17,6 +14,9 @@ public sealed class CreateBatchTests
 
         Assert.Equal(batchSize, batch.Groups.Count);
     }
+
+    public static IEnumerable<object[]> SupportedBatchSizes =>
+        BatchOptions.AllowedSizes.Select(size => new object[] { size });
 
     [Theory]
     [InlineData(250)]

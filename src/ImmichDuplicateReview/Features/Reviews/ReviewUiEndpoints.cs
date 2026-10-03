@@ -185,7 +185,7 @@ public static class ReviewUiEndpoints
     private static string E(string value) => WebUtility.HtmlEncode(value);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private sealed record SavedDecision(string[] Keep, string[] Trash, string[] Stack);
-    private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 10, 20, 50, 100 }.Select(size =>
+    private static string RenderBatchSizeOptions(int selected) => string.Concat(BatchOptions.AllowedSizes.Select(size =>
         $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));
     private static string RenderSortModeOptions() => """
         <option value="oldest">Oldest first</option>

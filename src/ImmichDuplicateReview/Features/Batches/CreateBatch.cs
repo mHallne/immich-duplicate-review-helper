@@ -42,7 +42,7 @@ public static class CreateBatch
 {
     public static ReviewBatch Handle(IEnumerable<DuplicateGroup> groups, int batchSize, SortMode sortMode = SortMode.Oldest)
     {
-        if (batchSize is not (10 or 20 or 50 or 100)) throw new ArgumentOutOfRangeException(nameof(batchSize));
+        if (!BatchOptions.IsAllowed(batchSize)) throw new ArgumentOutOfRangeException(nameof(batchSize));
         var pending = groups.Where(group => group.Status == ReviewStatus.Pending);
         var ordered = sortMode switch
         {

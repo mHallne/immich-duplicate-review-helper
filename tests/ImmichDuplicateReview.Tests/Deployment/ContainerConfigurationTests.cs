@@ -33,19 +33,15 @@ public sealed class ContainerConfigurationTests
     }
 
     [Fact]
-    public void Continuous_integration_ignores_documentation_only_changes()
+    public void Continuous_integration_reports_required_check_for_every_pull_request()
     {
         var repositoryRoot = FindRepositoryRoot();
         var workflow = File.ReadAllText(Path.Combine(repositoryRoot, ".github", "workflows", "build-and-test.yml"));
 
-        Assert.Contains("paths-ignore:", workflow, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(workflow, "'**/*.md'"));
-        Assert.Equal(2, CountOccurrences(workflow, "'docs/**'"));
-        Assert.Equal(2, CountOccurrences(workflow, "'.gitignore'"));
+        Assert.DoesNotContain("paths-ignore:", workflow, StringComparison.Ordinal);
+        Assert.Contains("push:\n    branches: [main]", workflow, StringComparison.Ordinal);
+        Assert.Contains("pull_request:", workflow, StringComparison.Ordinal);
     }
-
-    private static int CountOccurrences(string value, string expected) =>
-        (value.Length - value.Replace(expected, string.Empty, StringComparison.Ordinal).Length) / expected.Length;
 
     private static string FindRepositoryRoot()
     {

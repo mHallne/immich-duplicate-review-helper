@@ -64,6 +64,25 @@ public sealed class ImmichClientTests
     }
 
     [Fact]
+    public async Task Trash_safety_uses_user_visible_configuration()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "{\"trash\":{\"enabled\":true}}");
+
+        await Create(handler).EnsureTrashEnabledAsync();
+
+        Assert.Equal("https://immich.example/api/config", handler.LastRequest!.RequestUri!.ToString());
+        Assert.Equal("secret", handler.LastRequest.Headers.GetValues("x-api-key").Single());
+    }
+
+    [Fact]
+    public async Task Disabled_trash_is_rejected_from_user_visible_configuration()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "{\"trash\":{\"enabled\":false}}");
+
+        await Assert.ThrowsAsync<ImmichApiException>(() => Create(handler).EnsureTrashEnabledAsync());
+    }
+
+    [Fact]
     public async Task Ensure_stack_searches_by_primary_then_creates_with_ordered_assets()
     {
         var handler = new SequenceHandler(

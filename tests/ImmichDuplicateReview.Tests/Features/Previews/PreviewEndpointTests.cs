@@ -73,9 +73,14 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
     [Fact]
     public async Task Configured_default_batch_size_is_selected_on_start_page()
     {
-        await using var factory = new ConfiguredFactory("250");
+        await using var factory = new ConfiguredFactory("20");
         var html = await factory.CreateClient().GetStringAsync("/");
-        Assert.Contains("<option selected>250</option>", html, StringComparison.Ordinal);
+        Assert.Contains("<option selected>20</option>", html, StringComparison.Ordinal);
+        Assert.Contains("<option>10</option>", html, StringComparison.Ordinal);
+        Assert.Contains("<option>50</option>", html, StringComparison.Ordinal);
+        Assert.Contains("<option>100</option>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<option>250</option>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<option>500</option>", html, StringComparison.Ordinal);
         Assert.Contains("value=\"largest-potential-saving\"", html, StringComparison.Ordinal);
     }
 

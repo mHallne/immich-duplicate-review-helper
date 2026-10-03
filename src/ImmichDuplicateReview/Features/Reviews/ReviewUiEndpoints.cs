@@ -99,7 +99,7 @@ public static class ReviewUiEndpoints
             : string.Empty;
         var decisionLabel = group.Status == ReviewStatus.Failed ? "Review saved decision" : "Review proposed changes";
         var decisionAction = actionable
-            ? $"<button form=\"decision\" type=\"submit\">{decisionLabel}</button>"
+            ? $"<button id=\"review-decision\" form=\"decision\" type=\"submit\"{(saved is null ? " disabled" : string.Empty)}>{decisionLabel}</button>"
             : string.Empty;
         var skipAction = actionable
             ? $"<form id=\"skip\" method=\"post\" action=\"/review/{E(group.Id)}/skip\"><button type=\"submit\">Skip</button></form>"
@@ -118,17 +118,21 @@ public static class ReviewUiEndpoints
         for (var index = 0; index < group.Assets.Count; index++)
         {
             var asset = group.Assets[index];
-            var isKept = saved?.Keep.Contains(asset.Id, StringComparer.Ordinal) ?? index == 0;
+            var isKept = saved is null ? (bool?)null : saved.Keep.Contains(asset.Id, StringComparer.Ordinal);
             var isStacked = saved?.Stack.Contains(asset.Id, StringComparer.Ordinal) ?? false;
-            var keep = isKept ? "checked" : string.Empty;
-            var trash = isKept ? string.Empty : "checked";
+            var keep = isKept == true ? "checked" : string.Empty;
+            var trash = isKept == false ? "checked" : string.Empty;
             var stack = isStacked ? "checked" : string.Empty;
+            var stackDisabled = isKept == true ? string.Empty : "disabled";
+            var decisionInput = isKept is null
+                ? string.Empty
+                : $"<input type=\"hidden\" name=\"{(isKept.Value ? "keepAssetIds" : "trashAssetIds")}\" value=\"{E(asset.Id)}\" data-decision>";
             var controls = actionable
                 ? $"""
-                  <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} data-keep> Keep</label>
-                  <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} data-trash> Trash</label>
-                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" {stack} data-stack> Stack</label>
-                  <input type="hidden" name="{(isKept ? "keepAssetIds" : "trashAssetIds")}" value="{E(asset.Id)}" data-decision>
+                  <label><input type="radio" name="choice-{E(asset.Id)}" value="keep" {keep} required data-keep> Keep</label>
+                  <label><input type="radio" name="choice-{E(asset.Id)}" value="trash" {trash} required data-trash> Trash</label>
+                  <label><input type="checkbox" name="stackAssetIds" value="{E(asset.Id)}" {stack} {stackDisabled} data-stack> Stack</label>
+                  {decisionInput}
                   """
                 : "<p>Decision already recorded. This group is read-only.</p>";
             html.Append($"""
@@ -180,7 +184,7 @@ public static class ReviewUiEndpoints
     private static string E(string value) => WebUtility.HtmlEncode(value);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private sealed record SavedDecision(string[] Keep, string[] Trash, string[] Stack);
-    private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 50, 100, 250, 500 }.Select(size =>
+    private static string RenderBatchSizeOptions(int selected) => string.Concat(new[] { 10, 20, 50, 100 }.Select(size =>
         $"<option{(size == selected ? " selected" : string.Empty)}>{size}</option>"));
     private static string RenderSortModeOptions() => """
         <option value="oldest">Oldest first</option>
@@ -197,7 +201,8 @@ public static class ReviewUiEndpoints
         function typing(e){return ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.target.isContentEditable}
         function choose(i){focused=i; cards.forEach((c,n)=>c.classList.toggle('focused',n===i));}
         cards.forEach((c,i)=>c.addEventListener('click',()=>choose(i)));
-        document.querySelectorAll('[data-keep],[data-trash]').forEach(r=>r.addEventListener('change',e=>{const c=e.target.closest('.asset'), h=c.querySelector('[data-decision]'); h.name=e.target.value==='keep'?'keepAssetIds':'trashAssetIds'; if(e.target.value==='trash')c.querySelector('[data-stack]').checked=false;}));
+        function updateReady(){const b=document.querySelector('#review-decision');if(b)b.disabled=cards.some(c=>!c.querySelector('[data-decision]'));}
+        document.querySelectorAll('[data-keep],[data-trash]').forEach(r=>r.addEventListener('change',e=>{const c=e.target.closest('.asset');let h=c.querySelector('[data-decision]');if(!h){h=document.createElement('input');h.type='hidden';h.dataset.decision='';h.value=e.target.closest('.asset').querySelector('[data-keep]').value&&e.target.name.slice(7);c.append(h);}h.name=e.target.value==='keep'?'keepAssetIds':'trashAssetIds';const s=c.querySelector('[data-stack]');s.disabled=e.target.value!=='keep';if(e.target.value==='trash')s.checked=false;updateReady();}));
         document.addEventListener('keydown',e=>{if(typing(e)||!cards.length)return; const c=cards[focused];
           if(e.key>='1'&&e.key<='9'&&+e.key<=cards.length&&cards[+e.key-1].querySelector('[data-keep]')){choose(+e.key-1);cards[focused].querySelector('[data-keep]').click();}
           else if(e.key===' '&&c.querySelector('[data-keep]')){e.preventDefault();(c.querySelector('[data-keep]').checked?c.querySelector('[data-trash]'):c.querySelector('[data-keep]')).click();}
@@ -205,7 +210,7 @@ public static class ReviewUiEndpoints
           else if(e.key.toLowerCase()==='x'&&document.querySelector('#skip'))document.querySelector('#skip').requestSubmit();
           else if(e.key==='Enter'&&document.querySelector('[form="decision"][type="submit"]'))document.querySelector('#decision').requestSubmit(document.querySelector('[form="decision"][type="submit"]'));
           else if(e.key==='ArrowLeft')document.querySelector('#previous').requestSubmit(); else if(e.key==='ArrowRight')document.querySelector('#next').requestSubmit();
-          else if(e.key.toLowerCase()==='f')c.querySelector('img').requestFullscreen();}); choose(0);
+          else if(e.key.toLowerCase()==='f')c.querySelector('img').requestFullscreen();}); choose(0);updateReady();
         """;
 
     private static string Layout(string body) => $$"""

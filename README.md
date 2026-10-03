@@ -45,6 +45,52 @@ docker compose -f docker-compose.example.yml up --build -d
 
 If the Immich network has a different name, change `networks.immich.name`.
 
+## Deploy on Raspberry Pi
+
+Use a 64-bit-capable Raspberry Pi with a 64-bit OS; a Pi 4 or 5 is recommended. Confirm that `uname -m` prints `aarch64`. This guide assumes 64-bit Raspberry Pi OS because current Docker support is moving away from 32-bit ARM. Install [Docker Engine for Raspberry Pi OS](https://docs.docker.com/engine/install/raspberry-pi-os/) and the [Docker Compose plugin](https://docs.docker.com/compose/install/linux/), then verify `docker version` and `docker compose version`.
+
+Clone and configure the helper on the Pi:
+
+```bash
+git clone https://github.com/YOUR-USER/YOUR-REPOSITORY.git
+cd YOUR-REPOSITORY
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+Set `IMMICH_URL=http://immich-server:2283`, add the dedicated API key described above, and leave `DATA_PATH=/data`. Both containers must share a Docker network. Find Immich's network with `docker network ls`; if it is not `immich_default`, update `networks.immich.name` in `docker-compose.example.yml`.
+
+Build and start the native ARM64 image:
+
+```bash
+docker compose -f docker-compose.example.yml up -d --build
+docker compose -f docker-compose.example.yml logs -f
+```
+
+Verify both liveness and dependency readiness (the `echo` keeps responses readable):
+
+```bash
+curl -s http://localhost:8080/health; echo
+curl -s http://localhost:8080/ready; echo
+```
+
+The UI is available at `http://raspberrypi.local:8080`. It has no built-in user authentication, so expose it only on a trusted LAN or place it behind an authenticated reverse proxy. To update later, back up the SQLite volume first, then run:
+
+```bash
+git pull
+docker compose -f docker-compose.example.yml up -d --build
+```
+
+Do not run `docker compose down -v`: it deletes the named volume containing review progress. If readiness reports `"sqlite":false` and the logs show SQLite error code 14, repair ownership without deleting the volume:
+
+```bash
+docker compose -f docker-compose.example.yml run --rm \
+  --user root --entrypoint sh duplicate-review-helper \
+  -c 'chown -R "$APP_UID:$APP_UID" /data'
+docker compose -f docker-compose.example.yml up -d --build --force-recreate
+```
+
 ## Persistence and backup
 
 Review state and active batch membership are stored at `${DATA_PATH}/reviews.db`; the Compose example uses a named volume. For a consistent backup, stop the helper and copy `reviews.db` (or back up the entire volume). Restoring that file resumes the same bounded batch and position.

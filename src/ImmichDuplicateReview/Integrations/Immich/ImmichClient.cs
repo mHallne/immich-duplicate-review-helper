@@ -25,10 +25,22 @@ public sealed class ImmichClient(HttpClient httpClient, ImmichOptions options) :
     public async Task<PreviewContent> GetPreviewAsync(string assetId, CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Get, $"assets/{Uri.EscapeDataString(assetId)}/thumbnail?size=preview");
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        return new(bytes, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+        var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        try
+        {
+            await EnsureSuccessAsync(response, cancellationToken);
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            return new PreviewContent(
+                stream,
+                response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream",
+                response.Content.Headers.ContentLength,
+                response);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<string>> GetAlbumNamesAsync(string assetId, CancellationToken cancellationToken = default)

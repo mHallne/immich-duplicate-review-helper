@@ -22,4 +22,6 @@ Use four-space indentation, file-scoped namespaces, nullable reference types, an
 
 Never access Immich PostgreSQL or photo files. Never expose `IMMICH_API_KEY`, log authentication headers, permanently delete assets, or bypass explicit confirmation. Trash behavior must fail closed if Immich Trash cannot be verified as enabled.
 
+Follow trunk-based development with `main` as the single integration branch. Never commit directly to `main`. Create a short-lived branch from an up-to-date `main` for every change, including documentation and configuration changes, and merge it through a pull request after required checks pass. Keep branches and pull requests small, merge them promptly, and delete branches after merging. Do not create long-lived development or release branches.
+
 Use concise imperative commits, optionally Conventional Commits (`feat: add review proposal`). Pull requests should describe behavior, safety implications, configuration changes, and exact verification commands. Include screenshots for UI changes and link related issues.

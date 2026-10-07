@@ -107,6 +107,21 @@ public sealed class ReviewStoreTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Changing_batch_sort_replaces_the_active_session_order()
+    {
+        await using var store = new ReviewStore(_databasePath);
+        await store.InitializeAsync();
+        await store.UpsertGroupsAsync([Group("g1", 1), Group("g2", 2)]);
+        var oldest = await store.CreateOrResumeSessionAsync(100, ["g1", "g2"], "oldest");
+
+        var newest = await store.CreateOrResumeSessionAsync(100, ["g2", "g1"], "newest");
+
+        Assert.NotEqual(oldest.Id, newest.Id);
+        Assert.Equal("newest", newest.SortMode);
+        Assert.Equal(["g2", "g1"], (await store.LoadActiveBatchAsync()).Select(group => group.Id));
+    }
+
+    [Fact]
     public async Task Group_cursor_moves_within_batch_bounds_and_survives_restart()
     {
         await using (var first = new ReviewStore(_databasePath))

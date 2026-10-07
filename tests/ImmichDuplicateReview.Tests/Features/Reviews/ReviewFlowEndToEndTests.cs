@@ -123,6 +123,29 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Selecting_a_different_sort_reorders_the_loaded_duplicates()
+    {
+        await using var factory = new Factory(_dataPath, new ScenarioImmichClient());
+        var client = factory.CreateClient();
+        (await client.PostAsync("/review/start", new FormUrlEncodedContent(
+        [
+            new("batchSize", "100"),
+            new("sortMode", "oldest")
+        ]))).EnsureSuccessStatusCode();
+
+        var response = await client.PostAsync("/review/start", new FormUrlEncodedContent(
+        [
+            new("batchSize", "100"),
+            new("sortMode", "newest")
+        ]));
+        var page = await response.Content.ReadAsStringAsync();
+
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("g3-0.jpg", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("g1-0.jpg", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Ambiguous_resolve_page_requires_manual_verification_instead_of_reconfirmation()
     {
         var immich = new ScenarioImmichClient();

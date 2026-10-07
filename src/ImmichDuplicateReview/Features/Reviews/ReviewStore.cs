@@ -329,9 +329,21 @@ public sealed class ReviewStore(string databasePath) : IAsyncDisposable
             {
                 var existing = new ReviewSession(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3));
                 await reader.DisposeAsync();
-                await PopulateSessionAsync(connection, transaction, existing.Id, groupIds, cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return existing;
+                var requestedSettingsChanged = groupIds.Count > 0
+                    && (existing.BatchSize != batchSize || !string.Equals(existing.SortMode, sortMode, StringComparison.Ordinal));
+                if (!requestedSettingsChanged)
+                {
+                    await PopulateSessionAsync(connection, transaction, existing.Id, groupIds, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return existing;
+                }
+
+                await using var complete = connection.CreateCommand();
+                complete.Transaction = transaction;
+                complete.CommandText = "UPDATE review_session SET completed_at = $completed WHERE id = $id;";
+                complete.Parameters.AddWithValue("$completed", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+                complete.Parameters.AddWithValue("$id", existing.Id);
+                await complete.ExecuteNonQueryAsync(cancellationToken);
             }
         }
 

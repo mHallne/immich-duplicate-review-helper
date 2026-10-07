@@ -16,7 +16,7 @@ public static class ReviewUiEndpoints
             <form method="post" action="/review/start">
               <label>Batch size <select name="batchSize">{{RenderBatchSizeOptions(options.DefaultSize)}}</select></label>
               <label>Sort <select name="sortMode">{{RenderSortModeOptions()}}</select></label>
-              <button type="submit">Load oldest duplicates</button>
+              <button type="submit">Load duplicates</button>
             </form></main>
             """), "text/html"));
 

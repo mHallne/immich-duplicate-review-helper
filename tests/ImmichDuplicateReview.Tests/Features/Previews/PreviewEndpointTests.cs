@@ -96,6 +96,8 @@ public sealed class PreviewEndpointTests : IClassFixture<PreviewEndpointTests.Fa
         Assert.DoesNotContain("<option>250</option>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<option>500</option>", html, StringComparison.Ordinal);
         Assert.Contains("value=\"largest-potential-saving\"", html, StringComparison.Ordinal);
+        Assert.Contains(">Load duplicates</button>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Load oldest duplicates", html, StringComparison.Ordinal);
     }
 
     public sealed class Factory : WebApplicationFactory<Program>

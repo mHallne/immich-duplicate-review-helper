@@ -14,7 +14,7 @@ public static class ReviewUiEndpoints
             <main><h1>Immich Duplicate Review Helper</h1>
             <p>Review duplicate groups in a small, resumable batch. No action occurs without confirmation.</p>
             <form method="post" action="/review/start">
-              <label>Batch size <select name="batchSize">{{RenderBatchSizeOptions(options.DefaultSize)}}</select></label>
+              <label>Duplicate groups per batch <select name="batchSize">{{RenderBatchSizeOptions(options.DefaultSize)}}</select></label>
               <label>Sort <select name="sortMode">{{RenderSortModeOptions()}}</select></label>
               <button type="submit">Load duplicates</button>
             </form></main>

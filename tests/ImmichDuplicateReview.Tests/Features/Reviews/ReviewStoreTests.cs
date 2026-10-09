@@ -107,18 +107,24 @@ public sealed class ReviewStoreTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Changing_batch_sort_replaces_the_active_session_order()
+    public async Task Changing_from_100_oldest_to_10_newest_replaces_the_batch_and_resets_its_cursor()
     {
         await using var store = new ReviewStore(_databasePath);
         await store.InitializeAsync();
-        await store.UpsertGroupsAsync([Group("g1", 1), Group("g2", 2)]);
-        var oldest = await store.CreateOrResumeSessionAsync(100, ["g1", "g2"], "oldest");
+        var groups = Enumerable.Range(1, 100).Select(index => Group($"g{index:000}", index)).ToArray();
+        await store.UpsertGroupsAsync(groups);
+        var oldest = await store.CreateOrResumeSessionAsync(100, groups.Select(group => group.Id).ToArray(), "oldest");
+        await store.MoveActiveCursorAsync(99);
 
-        var newest = await store.CreateOrResumeSessionAsync(100, ["g2", "g1"], "newest");
+        var newestIds = groups.Reverse().Take(10).Select(group => group.Id).ToArray();
+        var newest = await store.CreateOrResumeSessionAsync(10, newestIds, "newest");
 
         Assert.NotEqual(oldest.Id, newest.Id);
+        Assert.Equal(10, newest.BatchSize);
         Assert.Equal("newest", newest.SortMode);
-        Assert.Equal(["g2", "g1"], (await store.LoadActiveBatchAsync()).Select(group => group.Id));
+        Assert.Equal(0, newest.CurrentPosition);
+        Assert.Equal(newestIds, (await store.LoadActiveBatchAsync()).Select(group => group.Id));
+        Assert.Equal("g100", (await store.LoadCurrentActiveGroupAsync())?.Id);
     }
 
     [Fact]

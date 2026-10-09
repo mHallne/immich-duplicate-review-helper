@@ -132,15 +132,19 @@ public sealed class ReviewFlowEndToEndTests : IAsyncDisposable
             new("batchSize", "100"),
             new("sortMode", "oldest")
         ]))).EnsureSuccessStatusCode();
+        (await client.PostAsync("/review/navigation/next", null)).EnsureSuccessStatusCode();
+        var oldLastPage = await client.PostAsync("/review/navigation/next", null);
+        Assert.Contains("Group 3 / 3", await oldLastPage.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         var response = await client.PostAsync("/review/start", new FormUrlEncodedContent(
         [
-            new("batchSize", "100"),
+            new("batchSize", "10"),
             new("sortMode", "newest")
         ]));
         var page = await response.Content.ReadAsStringAsync();
 
         response.EnsureSuccessStatusCode();
+        Assert.Contains("Group 1 / 3", page, StringComparison.Ordinal);
         Assert.Contains("g3-0.jpg", page, StringComparison.Ordinal);
         Assert.DoesNotContain("g1-0.jpg", page, StringComparison.Ordinal);
     }
